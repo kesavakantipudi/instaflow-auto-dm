@@ -245,4 +245,70 @@ class InstagramService:
             logger.exception("Error sending Instagram DM")
             raise Exception(f"Failed to deliver Instagram DM: {str(e)}")
 
+    @staticmethod
+    def subscribe_account(access_token: str, instagram_id: str) -> Dict[str, Any]:
+        """
+        Subscribes the Instagram account to the webhook changes (comments).
+        """
+        if access_token.startswith("mock_") or not access_token:
+            logger.info(f"[SIMULATED SUBSCRIBE] Subscribed account {instagram_id} to webhooks.")
+            return {"success": True}
+            
+        try:
+            # Let's hit the subscribed_apps endpoint on graph.instagram.com first
+            url = f"https://graph.instagram.com/v19.0/{instagram_id}/subscribed_apps"
+            params = {
+                "subscribed_fields": "comments,messages",
+                "access_token": access_token
+            }
+            logger.info(f"Subscribing Instagram account {instagram_id} to app webhooks. URL: {url}")
+            response = requests.post(url, params=params, timeout=10)
+            status_code = response.status_code
+            data = response.json()
+            logger.info(f"Subscription Response Code: {status_code}")
+            logger.info(f"Subscription Response: {data}")
+            
+            if "error" in data:
+                # If graph.instagram.com fails, try graph.facebook.com as a fallback
+                logger.warning("Failed on graph.instagram.com. Trying fallback to graph.facebook.com...")
+                fb_url = f"https://graph.facebook.com/v19.0/{instagram_id}/subscribed_apps"
+                fb_res = requests.post(fb_url, params=params, timeout=10)
+                logger.info(f"Fallback Subscription Response Code: {fb_res.status_code}")
+                logger.info(f"Fallback Subscription Response: {fb_res.json()}")
+                data = fb_res.json()
+                if "error" in data:
+                    raise Exception(data["error"]["message"])
+            return data
+        except Exception as e:
+            logger.exception("Failed to subscribe Instagram account to app webhooks")
+            raise Exception(f"Failed to configure webhook subscription: {str(e)}")
+
+    @staticmethod
+    def get_subscription_status(access_token: str, instagram_id: str) -> Dict[str, Any]:
+        """
+        Retrieves webhook subscription status (subscribed fields) for this Instagram account.
+        """
+        if access_token.startswith("mock_") or not access_token:
+            return {"data": [{"subscribed_fields": ["comments", "messages"]}], "simulated": True}
+            
+        try:
+            url = f"https://graph.instagram.com/v19.0/{instagram_id}/subscribed_apps"
+            params = {"access_token": access_token}
+            logger.info(f"Fetching webhook subscription status. URL: {url}")
+            response = requests.get(url, params=params, timeout=10)
+            data = response.json()
+            logger.info(f"Subscription status response: {data}")
+            
+            if "error" in data:
+                # Fallback to graph.facebook.com
+                fb_url = f"https://graph.facebook.com/v19.0/{instagram_id}/subscribed_apps"
+                fb_res = requests.get(fb_url, params=params, timeout=10)
+                data = fb_res.json()
+                if "error" in data:
+                    raise Exception(data["error"]["message"])
+            return data
+        except Exception as e:
+            logger.warning(f"Could not retrieve webhook subscription status: {e}")
+            return {"error": str(e), "data": []}
+
 instagram_service = InstagramService()

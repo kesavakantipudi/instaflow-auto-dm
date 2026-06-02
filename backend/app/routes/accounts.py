@@ -76,6 +76,13 @@ def connect_account(
             existing.page_id = info.get("page_id")
             existing.page_access_token = info.get("page_access_token")
             existing.is_connected = True
+            
+            # Subscribe to webhooks
+            try:
+                instagram_service.subscribe_account(access_token, info["id"])
+            except Exception as sub_err:
+                logger.warning(f"Webhook subscription auto-registration failed: {sub_err}")
+                
             db.commit()
             db.refresh(existing)
             logger.info("Account connection updated successfully.")
@@ -93,6 +100,13 @@ def connect_account(
             is_connected=True,
             webhook_status=True
         )
+        
+        # Subscribe to webhooks
+        try:
+            instagram_service.subscribe_account(access_token, info["id"])
+        except Exception as sub_err:
+            logger.warning(f"Webhook subscription auto-registration failed: {sub_err}")
+            
         db.add(new_account)
         db.commit()
         db.refresh(new_account)
@@ -154,3 +168,77 @@ def get_account_posts(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+@router.get("/{account_id}/diagnostics")
+def get_account_diagnostics(
+    account_id: str,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Diagnostic route checking Meta/Instagram account webhooks subscription, permissions, and status.
+    """
+    account = db.query(models.InstagramAccount).filter(
+        models.InstagramAccount.id == account_id,
+        models.InstagramAccount.user_id == current_user.id
+    ).first()
+    
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Instagram account not found"
+        )
+        
+    import requests
+    # 1. Fetch subscription status from Meta
+    subscription = instagram_service.get_subscription_status(account.access_token, account.id)
+    
+    # 2. Fetch token permissions from Meta
+    permissions = []
+    if not account.access_token.startswith("mock_") and account.access_token:
+        try:
+            perm_url = "https://graph.instagram.com/me/permissions"
+            res = requests.get(perm_url, params={"access_token": account.access_token}, timeout=10)
+            perm_data = res.json()
+            if "error" in perm_data:
+                # Try fallback to graph.facebook.com
+                fb_perm_url = "https://graph.facebook.com/me/permissions"
+                res = requests.get(fb_perm_url, params={"access_token": account.access_token}, timeout=10)
+                perm_data = res.json()
+            permissions = perm_data.get("data", [])
+        except Exception as e:
+            logger.warning(f"Could not fetch token permissions: {e}")
+            permissions = [{"error": str(e)}]
+    else:
+        permissions = [
+            {"permission": "instagram_basic", "status": "granted"},
+            {"permission": "instagram_manage_comments", "status": "granted"},
+            {"permission": "instagram_manage_messages", "status": "granted"}
+        ]
+        
+    # Check if subscription contains comments or messages or is active
+    sub_data = subscription.get("data", [])
+    has_comments = False
+    subscribed_fields_list = []
+    
+    if sub_data and isinstance(sub_data, list):
+        for app_sub in sub_data:
+            fields = app_sub.get("subscribed_fields", [])
+            subscribed_fields_list.extend(fields)
+            if "comments" in fields:
+                has_comments = True
+                
+    webhook_configured = "not_configured"
+    if has_comments:
+        webhook_configured = "active"
+    elif "error" in subscription:
+        webhook_configured = "error"
+        
+    return {
+        "instagram_account_id": account.id,
+        "username": account.username,
+        "subscription_status": subscription,
+        "subscribed_fields": list(set(subscribed_fields_list)),
+        "available_permissions": permissions,
+        "webhook_configuration_status": webhook_configured
+    }
