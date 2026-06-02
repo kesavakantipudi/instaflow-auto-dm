@@ -202,7 +202,15 @@ class InstagramService:
             raise
 
     @staticmethod
-    def send_dm(access_token: str, recipient_id: str, message: str, comment_id: str = None) -> Dict[str, Any]:
+    def send_dm(
+        access_token: str, 
+        recipient_id: str, 
+        message: str, 
+        comment_id: str = None,
+        media_id: str = None,
+        account_id: str = None,
+        page_access_token: str = None
+    ) -> Dict[str, Any]:
         """
         Sends message to user's Instagram DM inbox via Graph API.
         Can use recipient_id or comment_id (for private replies to comments).
@@ -213,7 +221,12 @@ class InstagramService:
             return {"recipient_id": recipient_id, "message_id": "mid.mock_dm_msg_id_123456789"}
             
         try:
-            url = f"https://graph.facebook.com/v19.0/me/messages?access_token={access_token}"
+            # For private replies to comments, Page Access Token is required. 
+            # If page_access_token is provided, use it. Otherwise fall back to access_token.
+            token_to_use = page_access_token if (comment_id and page_access_token) else access_token
+            token_type = "Page Access Token" if token_to_use == page_access_token else "User Access Token"
+            
+            url = f"https://graph.facebook.com/v19.0/me/messages?access_token={token_to_use}"
             
             recipient = {}
             if comment_id:
@@ -228,7 +241,15 @@ class InstagramService:
                 "message": {"text": message}
             }
             
-            logger.info(f"Sending Instagram DM. Endpoint: {url}")
+            logger.info("=== INSTAGRAM DM SEND ===")
+            logger.info(f"Endpoint: {url.split('?')[0]}")
+            logger.info(f"Comment ID: {comment_id}")
+            logger.info(f"Media ID: {media_id}")
+            logger.info(f"Account ID: {account_id}")
+            logger.info(f"Recipient ID: {recipient_id}")
+            logger.info(f"Token Type: {token_type}")
+            logger.info(f"Access Token Source Prefix: {access_token[:15]}...")
+            logger.info(f"Page Access Token Source Prefix: {page_access_token[:15]}..." if page_access_token else "N/A")
             logger.info(f"Payload: {json.dumps(payload)}")
             
             response = requests.post(url, json=payload, timeout=10)
@@ -236,14 +257,76 @@ class InstagramService:
             data = response.json()
             
             logger.info(f"Instagram DM Response Code: {status_code}")
-            logger.info(f"Instagram DM Response: {json.dumps(data)}")
+            logger.info(f"Instagram DM Response Body: {json.dumps(data)}")
             
             if "error" in data:
+                logger.error(f"DM Send FAILED: {data['error'].get('message')}")
                 raise Exception(data["error"]["message"])
             return data
         except Exception as e:
             logger.exception("Error sending Instagram DM")
             raise Exception(f"Failed to deliver Instagram DM: {str(e)}")
+
+    @staticmethod
+    def send_comment_reply(
+        access_token: str,
+        comment_id: str,
+        message: str,
+        media_id: str = None,
+        account_id: str = None,
+        page_access_token: str = None
+    ) -> Dict[str, Any]:
+        """
+        Sends a public reply to a comment using POST /{comment-id}/replies.
+        """
+        import json
+        if access_token.startswith("mock_") or not access_token:
+            logger.info(f"[SIMULATED COMMENT REPLY] Replied to comment {comment_id}: {message}")
+            return {"id": f"mock_reply_{comment_id}"}
+            
+        try:
+            # Comment replies can use User Access Token or Page Access Token.
+            # We default to access_token (User Token) but support fallback.
+            url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
+            params = {
+                "message": message,
+                "access_token": access_token
+            }
+            
+            logger.info("=== INSTAGRAM PUBLIC COMMENT REPLY SEND ===")
+            logger.info(f"Endpoint: {url}")
+            logger.info(f"Comment ID: {comment_id}")
+            logger.info(f"Media ID: {media_id}")
+            logger.info(f"Account ID: {account_id}")
+            logger.info(f"Token Type: User Access Token")
+            logger.info(f"Access Token Source Prefix: {access_token[:15]}...")
+            logger.info(f"Page Access Token Source Prefix: {page_access_token[:15]}..." if page_access_token else "N/A")
+            
+            response = requests.post(url, params=params, timeout=10)
+            status_code = response.status_code
+            data = response.json()
+            
+            logger.info(f"Instagram Comment Reply Response Code: {status_code}")
+            logger.info(f"Instagram Comment Reply Response Body: {json.dumps(data)}")
+            
+            if "error" in data and page_access_token:
+                logger.warning("Failed with User Access Token. Trying fallback to Page Access Token...")
+                params["access_token"] = page_access_token
+                response = requests.post(url, params=params, timeout=10)
+                status_code = response.status_code
+                data = response.json()
+                logger.info(f"Fallback Instagram Comment Reply Response Code: {status_code}")
+                logger.info(f"Fallback Instagram Comment Reply Response Body: {json.dumps(data)}")
+                
+            if "error" in data:
+                logger.error(f"Comment reply status: FAILED. Error: {data['error'].get('message')}")
+                raise Exception(data["error"]["message"])
+                
+            logger.info("Comment reply status: SUCCESS")
+            return data
+        except Exception as e:
+            logger.exception("Error sending Instagram comment reply")
+            raise Exception(f"Failed to deliver comment reply: {str(e)}")
 
     @staticmethod
     def subscribe_account(access_token: str, instagram_id: str) -> Dict[str, Any]:

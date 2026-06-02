@@ -205,9 +205,28 @@ class DMService:
                 access_token=account.access_token,
                 recipient_id=f"user_{username}",
                 message=final_msg,
-                comment_id=comment_id
+                comment_id=comment_id,
+                media_id=media_id,
+                account_id=instagram_account_id,
+                page_access_token=account.page_access_token
             )
             logger.info("=== INSTAGRAM REPLY SENT ===")
+            
+            # Send public comment reply (e.g. "Sent you a DM! Check your inbox.")
+            if comment_id:
+                try:
+                    public_msg = f"Sent you a DM! Check your inbox. 🚀"
+                    instagram_service.send_comment_reply(
+                        access_token=account.access_token,
+                        comment_id=comment_id,
+                        message=public_msg,
+                        media_id=media_id,
+                        account_id=instagram_account_id,
+                        page_access_token=account.page_access_token
+                    )
+                    logger.info("=== INSTAGRAM PUBLIC COMMENT REPLY SENT ===")
+                except Exception as pub_ex:
+                    logger.exception("Failed to send public comment reply")
         except Exception as e:
             success = False
             error_msg = str(e)
@@ -243,7 +262,8 @@ class DMService:
                 username=username,
                 comment_text=comment_text,
                 post_name=post_caption,
-                follow_ups=matched_auto.follow_ups
+                follow_ups=matched_auto.follow_ups,
+                page_access_token=account.page_access_token
             )
             
         if not success:
@@ -267,7 +287,8 @@ class DMService:
         username: str,
         comment_text: str,
         post_name: str,
-        follow_ups: List[Dict[str, Any]]
+        follow_ups: List[Dict[str, Any]],
+        page_access_token: str = None
     ):
         """
         Processes multi-step follow-up triggers asynchronously.
@@ -302,7 +323,9 @@ class DMService:
                     instagram_service.send_dm(
                         access_token=access_token,
                         recipient_id=f"user_{username}",
-                        message=raw_follow_msg
+                        message=raw_follow_msg,
+                        page_access_token=page_access_token,
+                        account_id=account_id
                     )
                 except Exception as e:
                     success = False
