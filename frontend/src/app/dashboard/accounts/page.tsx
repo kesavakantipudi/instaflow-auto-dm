@@ -13,7 +13,81 @@ export default function AccountsPage() {
 
   useEffect(() => {
     fetchAccounts();
+    handleOAuthCallback();
   }, []);
+
+  const handleOAuthCallback = async () => {
+    if (typeof window === "undefined") return;
+
+    // Check hash parameters for access_token (Facebook OAuth Implicit Grant)
+    const hash = window.location.hash;
+    if (hash && hash.includes("access_token")) {
+      const params = new URLSearchParams(hash.substring(1));
+      const token = params.get("access_token");
+      if (token) {
+        setConnecting(true);
+        setMessage({ text: "", type: "" });
+        try {
+          await api.connectAccount(token);
+          setMessage({ text: "Instagram Business Profile linked successfully via Meta OAuth!", type: "success" });
+          fetchAccounts();
+        } catch (err: any) {
+          setMessage({ text: err.message || "Failed to link profile via OAuth.", type: "error" });
+        } finally {
+          setConnecting(false);
+          // Clean the url hash
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    }
+
+    // Check query params for any login errors
+    const searchParams = new URLSearchParams(window.location.search);
+    const errorMsg = searchParams.get("error_message") || searchParams.get("error_description");
+    if (errorMsg) {
+      setMessage({ text: `Meta OAuth login rejected: ${errorMsg}`, type: "error" });
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  };
+
+  const triggerOAuth = () => {
+    const appId = process.env.NEXT_PUBLIC_META_APP_ID;
+    if (!appId) {
+      setMessage({
+        text: "Configuration error: NEXT_PUBLIC_META_APP_ID is not configured in environment settings.",
+        type: "error"
+      });
+      return;
+    }
+
+    const redirectUri = process.env.NEXT_PUBLIC_META_REDIRECT_URI || `${window.location.origin}/dashboard/accounts`;
+    const scopes = [
+      "pages_show_list",
+      "instagram_basic",
+      "instagram_manage_messages",
+      "pages_read_engagement",
+      "pages_manage_metadata"
+    ].join(",");
+
+    const oauthUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&response_type=token`;
+    
+    setConnecting(true);
+    window.location.href = oauthUrl;
+  };
+
+  const handleSimulatedConnect = async () => {
+    setConnecting(true);
+    setMessage({ text: "", type: "" });
+    try {
+      await api.connectAccount("mock_kesava_creator_token");
+      setMessage({ text: "Sandbox simulation profile linked successfully!", type: "success" });
+      fetchAccounts();
+    } catch (err: any) {
+      setMessage({ text: err.message || "Failed to connect simulator profile.", type: "error" });
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   const fetchAccounts = async () => {
     try {
@@ -24,25 +98,6 @@ export default function AccountsPage() {
       setMessage({ text: err.message || "Failed to load accounts.", type: "error" });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleConnect = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!tokenInput.trim()) return;
-
-    setConnecting(true);
-    setMessage({ text: "", type: "" });
-
-    try {
-      await api.connectAccount(tokenInput.trim());
-      setMessage({ text: "Instagram account connected successfully!", type: "success" });
-      setTokenInput("");
-      fetchAccounts();
-    } catch (err: any) {
-      setMessage({ text: err.message || "Connection failed. Please verify token.", type: "error" });
-    } finally {
-      setConnecting(false);
     }
   };
 
@@ -57,10 +112,6 @@ export default function AccountsPage() {
     } catch (err: any) {
       setMessage({ text: err.message || "Failed to disconnect account.", type: "error" });
     }
-  };
-
-  const useMockToken = () => {
-    setTokenInput("mock_kesava_creator_token");
   };
 
   return (
@@ -92,39 +143,23 @@ export default function AccountsPage() {
               <Link2 className="w-5 h-5 text-cyan-400" /> Connect Profile
             </h3>
             <p className="text-slate-400 text-xs mt-1">
-              Enter your Meta System User or Page Access Token.
+              Link your Instagram profile to start automated DMs.
             </p>
           </div>
 
-          <form onSubmit={handleConnect} className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                System Access Token
-              </label>
-              <textarea
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                rows={4}
-                className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-200 placeholder-slate-600 focus:border-cyan-500"
-                placeholder="EAAW..."
-                required
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={connecting}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-cyan-500 text-slate-950 font-bold hover:shadow-lg hover:shadow-cyan-500/10 transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-            >
-              {connecting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-slate-950" /> Connecting...
-                </>
-              ) : (
-                "Authorize Instagram Account"
-              )}
-            </button>
-          </form>
+          <button
+            onClick={triggerOAuth}
+            disabled={connecting}
+            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white font-bold hover:shadow-lg hover:shadow-indigo-500/20 transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+          >
+            {connecting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-white" /> Authenticating...
+              </>
+            ) : (
+              "Connect Instagram via Facebook"
+            )}
+          </button>
 
           {/* Local testing helper */}
           <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-900/30 space-y-2.5">
@@ -135,10 +170,11 @@ export default function AccountsPage() {
               Don't have real Facebook Developer credentials? Connect immediately by generating a simulated account with a mock token.
             </p>
             <button
-              onClick={useMockToken}
-              className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+              onClick={handleSimulatedConnect}
+              disabled={connecting}
+              className="w-full py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-cyan-400 text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
             >
-              Fill Mock Token <Sparkles className="w-3 h-3 text-cyan-400" />
+              Link Sandbox Profile <Sparkles className="w-3 h-3 text-cyan-400" />
             </button>
           </div>
         </div>
