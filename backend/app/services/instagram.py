@@ -164,9 +164,21 @@ class InstagramService:
             ]
             
         try:
-            url = f"https://graph.facebook.com/v19.0/{instagram_id}/media?fields=id,media_type,media_url,thumbnail_url,permalink,caption,timestamp&access_token={access_token}&limit=20"
-            response = requests.get(url, timeout=10)
+            url = "https://graph.instagram.com/me/media"
+            
+            logger.info(f"Fetching media for {instagram_id}")
+            logger.info(f"Token prefix: {access_token[:15]}...")
+            logger.info(f"Using endpoint: {url}")
+            
+            params = {
+                "fields": "id,media_type,media_url,thumbnail_url,permalink,caption,timestamp",
+                "access_token": access_token
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
             data = response.json()
+            logger.info(f"Instagram media response: {data}")
+            
             if "error" in data:
                 raise Exception(data["error"]["message"])
                 
@@ -186,8 +198,8 @@ class InstagramService:
                 })
             return posts
         except Exception as e:
-            logger.error(f"Error fetching media posts: {e}")
-            return []
+            logger.exception("Media fetch failed")
+            raise
 
     @staticmethod
     def send_dm(access_token: str, recipient_id: str, message: str) -> Dict[str, Any]:
