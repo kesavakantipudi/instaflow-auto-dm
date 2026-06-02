@@ -98,10 +98,14 @@ class ApiClient {
     return this.request<any[]>("/api/accounts");
   }
 
-  async connectAccount(accessToken: string): Promise<any> {
+  async connectAccount(accessToken?: string, code?: string, redirectUri?: string): Promise<any> {
     return this.request<any>("/api/accounts/connect", {
       method: "POST",
-      body: JSON.stringify({ access_token: accessToken }),
+      body: JSON.stringify({
+        access_token: accessToken,
+        code: code,
+        redirect_uri: redirectUri
+      }),
     });
   }
 

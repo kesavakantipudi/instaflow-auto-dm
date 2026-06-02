@@ -18,7 +18,9 @@ def get_accounts(
     return accounts
 
 class ConnectAccountPayload(schemas.BaseModel):
-    access_token: str
+    access_token: str = None
+    code: str = None
+    redirect_uri: str = None
 
 @router.post("/connect", response_model=schemas.InstagramAccountOut)
 def connect_account(
@@ -26,15 +28,30 @@ def connect_account(
     current_user: models.User = Depends(auth.get_current_user), 
     db: Session = Depends(get_db)
 ):
-    if not payload.access_token:
+    if not payload.access_token and not payload.code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Access token is required"
+            detail="Either access_token or code is required"
         )
+        
+    access_token = payload.access_token
+    if payload.code:
+        if not payload.redirect_uri:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="redirect_uri is required for authorization code exchange"
+            )
+        try:
+            access_token = instagram_service.exchange_code_for_token(payload.code, payload.redirect_uri)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
         
     try:
         # Fetch account info via Meta Graph API
-        info = instagram_service.get_account_info(payload.access_token)
+        info = instagram_service.get_account_info(access_token)
         
         # Check if already connected by someone else
         existing = db.query(models.InstagramAccount).filter(
@@ -45,7 +62,7 @@ def connect_account(
             # Reconnect or take ownership
             existing.user_id = current_user.id
             existing.username = info["username"]
-            existing.access_token = payload.access_token
+            existing.access_token = access_token
             existing.page_id = info.get("page_id")
             existing.page_access_token = info.get("page_access_token")
             existing.is_connected = True
@@ -57,7 +74,7 @@ def connect_account(
             id=info["id"],
             user_id=current_user.id,
             username=info["username"],
-            access_token=payload.access_token,
+            access_token=access_token,
             page_id=info.get("page_id"),
             page_access_token=info.get("page_access_token"),
             account_type=info.get("account_type", "business"),

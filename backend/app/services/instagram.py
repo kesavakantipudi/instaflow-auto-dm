@@ -7,6 +7,53 @@ logger = logging.getLogger(__name__)
 
 class InstagramService:
     @staticmethod
+    def exchange_code_for_token(code: str, redirect_uri: str) -> str:
+        """
+        Exchanges Instagram OAuth authorization code for an access token.
+        """
+        from app.config import settings
+        
+        # Sandbox / local simulation support
+        if code.startswith("mock_"):
+            return "mock_kesava_creator_token"
+            
+        try:
+            # Step 1: Exchange code for short-lived token
+            url = "https://api.instagram.com/oauth/access_token"
+            payload = {
+                "client_id": settings.META_CLIENT_ID,
+                "client_secret": settings.META_CLIENT_SECRET,
+                "grant_type": "authorization_code",
+                "redirect_uri": redirect_uri,
+                "code": code
+            }
+            response = requests.post(url, data=payload, timeout=10)
+            data = response.json()
+            if "error" in data:
+                error_msg = data.get("error_message") or (data["error"].get("message") if isinstance(data.get("error"), dict) else "Unknown error")
+                raise Exception(error_msg)
+                
+            short_lived_token = data["access_token"]
+            
+            # Step 2: Exchange short-lived token for long-lived (60 days) token
+            long_lived_url = "https://graph.instagram.com/access_token"
+            params = {
+                "grant_type": "ig_exchange_token",
+                "client_secret": settings.META_CLIENT_SECRET,
+                "access_token": short_lived_token
+            }
+            ll_response = requests.get(long_lived_url, params=params, timeout=10)
+            ll_data = ll_response.json()
+            if "error" in ll_data:
+                # Fallback to short-lived token
+                return short_lived_token
+                
+            return ll_data.get("access_token") or short_lived_token
+        except Exception as e:
+            logger.error(f"Error exchanging authorization code: {e}")
+            raise Exception(f"OAuth code exchange failed: {str(e)}")
+
+    @staticmethod
     def get_account_info(access_token: str) -> Dict[str, Any]:
         """
         Gets details of connected business account. Falls back to mock data if it is a mock token.

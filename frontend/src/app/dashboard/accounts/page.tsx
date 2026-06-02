@@ -19,33 +19,31 @@ export default function AccountsPage() {
   const handleOAuthCallback = async () => {
     if (typeof window === "undefined") return;
 
-    // Check hash parameters for access_token (Facebook OAuth Implicit Grant)
-    const hash = window.location.hash;
-    if (hash && hash.includes("access_token")) {
-      const params = new URLSearchParams(hash.substring(1));
-      const token = params.get("access_token");
-      if (token) {
-        setConnecting(true);
-        setMessage({ text: "", type: "" });
-        try {
-          await api.connectAccount(token);
-          setMessage({ text: "Instagram Business Profile linked successfully via Meta OAuth!", type: "success" });
-          fetchAccounts();
-        } catch (err: any) {
-          setMessage({ text: err.message || "Failed to link profile via OAuth.", type: "error" });
-        } finally {
-          setConnecting(false);
-          // Clean the url hash
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
+    // Check query parameters for authorization code (Instagram Login Code Flow)
+    const searchParams = new URLSearchParams(window.location.search);
+    const code = searchParams.get("code");
+    
+    if (code) {
+      setConnecting(true);
+      setMessage({ text: "", type: "" });
+      const redirectUri = process.env.NEXT_PUBLIC_META_REDIRECT_URI || `${window.location.origin}/dashboard/accounts`;
+      try {
+        await api.connectAccount(undefined, code, redirectUri);
+        setMessage({ text: "Instagram Business Profile linked successfully via Instagram Login!", type: "success" });
+        fetchAccounts();
+      } catch (err: any) {
+        setMessage({ text: err.message || "Failed to link profile via Instagram Login.", type: "error" });
+      } finally {
+        setConnecting(false);
+        // Clean the url query params
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
 
     // Check query params for any login errors
-    const searchParams = new URLSearchParams(window.location.search);
     const errorMsg = searchParams.get("error_message") || searchParams.get("error_description");
     if (errorMsg) {
-      setMessage({ text: `Meta OAuth login rejected: ${errorMsg}`, type: "error" });
+      setMessage({ text: `Instagram Login rejected: ${errorMsg}`, type: "error" });
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   };
@@ -62,14 +60,12 @@ export default function AccountsPage() {
 
     const redirectUri = process.env.NEXT_PUBLIC_META_REDIRECT_URI || `${window.location.origin}/dashboard/accounts`;
     const scopes = [
-      "pages_show_list",
-      "instagram_basic",
-      "instagram_manage_messages",
-      "pages_read_engagement",
-      "pages_manage_metadata"
+      "instagram_business_basic",
+      "instagram_business_manage_messages",
+      "instagram_business_manage_comments"
     ].join(",");
 
-    const oauthUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&response_type=token`;
+    const oauthUrl = `https://api.instagram.com/oauth/authorize?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&response_type=code`;
     
     setConnecting(true);
     window.location.href = oauthUrl;
