@@ -79,6 +79,8 @@ class DMService:
             models.Automation.status == "active"
         ).all()
         
+        logger.info(f"DM Service: Loaded {len(automations)} active automations for account {instagram_account_id}")
+        
         matched_auto = None
         match_keyword = None
         
@@ -94,11 +96,15 @@ class DMService:
             
         # 1. First, check if "AI Intent Detection" fits
         ai_matched_id = ai_service.classify_intent(comment_text, auto_list_dict)
+        logger.info(f"DM Service: AI classification matched ID: {ai_matched_id}")
         
         for auto in automations:
+            logger.info(f"DM Service: Evaluating automation '{auto.name}' (ID: {auto.id})")
+            
             # Check Post Scope
             if auto.scope_type == "selected_posts":
                 post_matched = any(p.media_id == media_id for p in auto.posts)
+                logger.info(f"DM Service: Scope check (selected_posts). Received media_id: {media_id}. Connected posts: {[p.media_id for p in auto.posts]}. Matched: {post_matched}")
                 if not post_matched:
                     continue
             elif auto.scope_type == "latest_post":
@@ -106,8 +112,12 @@ class DMService:
                 latest_post = db.query(models.AutomationPost).filter(
                     models.AutomationPost.automation_id == auto.id
                 ).order_by(models.AutomationPost.publish_date.desc()).first()
-                if latest_post and latest_post.media_id != media_id:
+                latest_matched = latest_post and latest_post.media_id == media_id
+                logger.info(f"DM Service: Scope check (latest_post). Received media_id: {media_id}. Latest: {latest_post.media_id if latest_post else 'none'}. Matched: {latest_matched}")
+                if not latest_matched:
                     continue
+            else:
+                logger.info(f"DM Service: Scope check ({auto.scope_type}) automatically matched.")
                     
             # Check Trigger Type
             comment_clean = comment_text.lower().strip()
@@ -115,15 +125,18 @@ class DMService:
             if auto.trigger_type == "all":
                 matched_auto = auto
                 match_keyword = "All Comments"
+                logger.info("DM Service: Trigger check ('all') matched.")
                 break
                 
             elif auto.trigger_type == "ai_intent" and ai_matched_id == auto.id:
                 matched_auto = auto
                 match_keyword = "AI Intent Detected"
+                logger.info("DM Service: Trigger check ('ai_intent') matched.")
                 break
                 
             elif auto.trigger_type in ["keyword", "contains_any"]:
                 keywords = [k.keyword.lower().strip() for k in auto.keywords]
+                logger.info(f"DM Service: Trigger check ({auto.trigger_type}). Filter: {auto.comment_filter_type}. Comment: '{comment_clean}'. Keywords: {keywords}")
                 
                 # Check filter type matching
                 is_match = False
@@ -154,10 +167,18 @@ class DMService:
                 if is_match:
                     matched_auto = auto
                     match_keyword = matched_kw
+                    logger.info(f"DM Service: Trigger check matched keyword: '{matched_kw}'")
                     break
+                else:
+                    logger.info("DM Service: Trigger check did not match keywords.")
                     
         if not matched_auto:
+            logger.warning(f"DM Service: No active automation triggers matched comment: '{comment_text}' on media: {media_id}")
             return {"status": "ignored", "message": "No active automation triggers matched this comment"}
+            
+        logger.info("=== AUTOMATION MATCHED ===")
+        logger.info(f"Automation ID: {matched_auto.id}")
+        logger.info(f"Automation Name: {matched_auto.name}")
             
         # Compile direct message
         post_caption = "Simulated Post"
@@ -173,6 +194,8 @@ class DMService:
         )
         
         final_msg = cls.format_message_with_attachments(raw_msg, matched_auto.attachments)
+        logger.info("=== REPLY TEMPLATE COMPILED ===")
+        logger.info(f"Message Content: {final_msg}")
         
         # Send immediate DM
         success = True
@@ -181,11 +204,14 @@ class DMService:
             instagram_service.send_dm(
                 access_token=account.access_token,
                 recipient_id=f"user_{username}",
-                message=final_msg
+                message=final_msg,
+                comment_id=comment_id
             )
+            logger.info("=== INSTAGRAM REPLY SENT ===")
         except Exception as e:
             success = False
             error_msg = str(e)
+            logger.exception("DM Service: Failed to deliver Instagram DM")
             
         # Save Activity Log
         log = models.ActivityLog(
@@ -203,9 +229,11 @@ class DMService:
         db.add(log)
         db.commit()
         db.refresh(log)
+        logger.info(f"DM Service: Saved ActivityLog record with ID {log.id} and status '{log.status}'")
         
         # Trigger Follow-up sequences in background
         if success and matched_auto.follow_ups:
+            logger.info(f"DM Service: Scheduling follow-up sequences. Count: {len(matched_auto.follow_ups)}")
             background_tasks.add_task(
                 cls.process_follow_ups,
                 user_id=account.user_id,
@@ -218,12 +246,15 @@ class DMService:
                 follow_ups=matched_auto.follow_ups
             )
             
+        if not success:
+            raise Exception(f"Failed to deliver Instagram DM: {error_msg}")
+            
         return {
-            "status": "success" if success else "failed",
+            "status": "success",
             "log_id": log.id,
             "matched_automation": matched_auto.name,
             "message_sent": final_msg,
-            "error": error_msg
+            "error": None
         }
 
     @classmethod

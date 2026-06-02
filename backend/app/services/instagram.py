@@ -202,27 +202,47 @@ class InstagramService:
             raise
 
     @staticmethod
-    def send_dm(access_token: str, recipient_id: str, message: str) -> Dict[str, Any]:
+    def send_dm(access_token: str, recipient_id: str, message: str, comment_id: str = None) -> Dict[str, Any]:
         """
         Sends message to user's Instagram DM inbox via Graph API.
+        Can use recipient_id or comment_id (for private replies to comments).
         """
+        import json
         if access_token.startswith("mock_") or not access_token:
-            logger.info(f"[SIMULATED DM] Sent to recipient {recipient_id}: {message}")
+            logger.info(f"[SIMULATED DM] Sent to recipient {recipient_id} (comment {comment_id}): {message}")
             return {"recipient_id": recipient_id, "message_id": "mid.mock_dm_msg_id_123456789"}
             
         try:
             url = f"https://graph.facebook.com/v19.0/me/messages?access_token={access_token}"
+            
+            recipient = {}
+            if comment_id:
+                recipient["comment_id"] = comment_id
+            else:
+                # Strip user_ prefix if present
+                clean_id = recipient_id.replace("user_", "")
+                recipient["id"] = clean_id
+                
             payload = {
-                "recipient": {"id": recipient_id},
+                "recipient": recipient,
                 "message": {"text": message}
             }
+            
+            logger.info(f"Sending Instagram DM. Endpoint: {url}")
+            logger.info(f"Payload: {json.dumps(payload)}")
+            
             response = requests.post(url, json=payload, timeout=10)
+            status_code = response.status_code
             data = response.json()
+            
+            logger.info(f"Instagram DM Response Code: {status_code}")
+            logger.info(f"Instagram DM Response: {json.dumps(data)}")
+            
             if "error" in data:
                 raise Exception(data["error"]["message"])
             return data
         except Exception as e:
-            logger.error(f"Error sending DM: {e}")
+            logger.exception("Error sending Instagram DM")
             raise Exception(f"Failed to deliver Instagram DM: {str(e)}")
 
 instagram_service = InstagramService()

@@ -79,6 +79,9 @@ async def receive_webhook(
 
         payload = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
         
+        logger.info("=== WEBHOOK RECEIVED ===")
+        logger.info(f"Payload: {json.dumps(payload)}")
+        
         # Log webhook payload in DB
         webhook_log = models.WebhookLog(payload=payload, status="success")
         db.add(webhook_log)
@@ -99,6 +102,12 @@ async def receive_webhook(
                         username = val.get("from", {}).get("username")
                         media_id = val.get("media", {}).get("id")
                         
+                        logger.info("=== COMMENT EVENT DETECTED ===")
+                        logger.info(f"Comment ID: {comment_id}")
+                        logger.info(f"Media ID: {media_id}")
+                        logger.info(f"Commenter Username: {username}")
+                        logger.info(f"Comment Text: {comment_text}")
+                        
                         if ig_acct_id and username and comment_text and media_id:
                             # Trigger direct message match matching on background worker thread
                             background_tasks.add_task(
@@ -111,12 +120,13 @@ async def receive_webhook(
                                 background_tasks=background_tasks,
                                 comment_id=comment_id
                             )
+                        else:
+                            logger.warning(f"Comment event omitted because of missing fields: account_id={ig_acct_id}, username={username}, text={comment_text}, media_id={media_id}")
                             
         return {"status": "event_received"}
     except Exception as e:
-        logger.error(f"Error handling incoming webhook: {e}")
-        # Return success/ok to Meta anyway to avoid retries clogging the server
-        return {"status": "error_logged", "detail": str(e)}
+        logger.exception("Webhook processing failed")
+        raise
 
 @router.post("/simulate")
 def simulate_webhook(
