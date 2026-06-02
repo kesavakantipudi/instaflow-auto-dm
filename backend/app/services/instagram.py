@@ -241,23 +241,17 @@ class InstagramService:
                 "message": {"text": message}
             }
             
-            logger.info("=== INSTAGRAM DM SEND ===")
+            logger.info(f"=== SEND_DM_CALLED ===")
+            logger.info(f"SEND_DM_CALLED: recipient_id={recipient_id}, comment_id={comment_id}, media_id={media_id}, account_id={account_id}")
             logger.info(f"Endpoint: {url.split('?')[0]}")
-            logger.info(f"Comment ID: {comment_id}")
-            logger.info(f"Media ID: {media_id}")
-            logger.info(f"Account ID: {account_id}")
-            logger.info(f"Recipient ID: {recipient_id}")
-            logger.info(f"Token Type: {token_type}")
-            logger.info(f"Access Token Source Prefix: {access_token[:15]}...")
-            logger.info(f"Page Access Token Source Prefix: {page_access_token[:15]}..." if page_access_token else "N/A")
+            logger.info(f"TOKEN_SOURCE: token_type={token_type}, access_token={access_token[:15]}..., page_access_token={page_access_token[:15] if page_access_token else 'NULL'}...")
             logger.info(f"Payload: {json.dumps(payload)}")
             
             response = requests.post(url, json=payload, timeout=10)
             status_code = response.status_code
             data = response.json()
             
-            logger.info(f"Instagram DM Response Code: {status_code}")
-            logger.info(f"Instagram DM Response Body: {json.dumps(data)}")
+            logger.info(f"META_RESPONSE: method=POST, endpoint={url.split('?')[0]}, status_code={status_code}, body={json.dumps(data)}")
             
             if "error" in data:
                 logger.error(f"DM Send FAILED: {data['error'].get('message')}")
@@ -293,30 +287,25 @@ class InstagramService:
                 "access_token": access_token
             }
             
-            logger.info("=== INSTAGRAM PUBLIC COMMENT REPLY SEND ===")
+            logger.info(f"=== SEND_COMMENT_REPLY_CALLED ===")
+            logger.info(f"SEND_COMMENT_REPLY_CALLED: comment_id={comment_id}, media_id={media_id}, account_id={account_id}")
             logger.info(f"Endpoint: {url}")
-            logger.info(f"Comment ID: {comment_id}")
-            logger.info(f"Media ID: {media_id}")
-            logger.info(f"Account ID: {account_id}")
-            logger.info(f"Token Type: User Access Token")
-            logger.info(f"Access Token Source Prefix: {access_token[:15]}...")
-            logger.info(f"Page Access Token Source Prefix: {page_access_token[:15]}..." if page_access_token else "N/A")
+            logger.info(f"TOKEN_SOURCE: token_type=User Access Token, access_token={access_token[:15]}..., page_access_token={page_access_token[:15] if page_access_token else 'NULL'}...")
             
             response = requests.post(url, params=params, timeout=10)
             status_code = response.status_code
             data = response.json()
             
-            logger.info(f"Instagram Comment Reply Response Code: {status_code}")
-            logger.info(f"Instagram Comment Reply Response Body: {json.dumps(data)}")
+            logger.info(f"META_RESPONSE: method=POST, endpoint={url}, status_code={status_code}, body={json.dumps(data)}")
             
             if "error" in data and page_access_token:
                 logger.warning("Failed with User Access Token. Trying fallback to Page Access Token...")
                 params["access_token"] = page_access_token
+                logger.info(f"TOKEN_SOURCE: token_type=Page Access Token (Fallback), access_token={access_token[:15]}..., page_access_token={page_access_token[:15]}...")
                 response = requests.post(url, params=params, timeout=10)
                 status_code = response.status_code
                 data = response.json()
-                logger.info(f"Fallback Instagram Comment Reply Response Code: {status_code}")
-                logger.info(f"Fallback Instagram Comment Reply Response Body: {json.dumps(data)}")
+                logger.info(f"META_RESPONSE (Fallback): method=POST, endpoint={url}, status_code={status_code}, body={json.dumps(data)}")
                 
             if "error" in data:
                 logger.error(f"Comment reply status: FAILED. Error: {data['error'].get('message')}")
@@ -327,6 +316,7 @@ class InstagramService:
         except Exception as e:
             logger.exception("Error sending Instagram comment reply")
             raise Exception(f"Failed to deliver comment reply: {str(e)}")
+
 
     @staticmethod
     def subscribe_account(access_token: str, instagram_id: str) -> Dict[str, Any]:

@@ -71,6 +71,7 @@ class DMService:
             models.InstagramAccount.id == instagram_account_id
         ).first()
         if not account:
+            logger.error(f"DM Service: Instagram account not found for ID '{instagram_account_id}' in database. Aborting.")
             return {"status": "error", "message": "Instagram account not found"}
             
         # Fetch active automations for this account
@@ -176,9 +177,8 @@ class DMService:
             logger.warning(f"DM Service: No active automation triggers matched comment: '{comment_text}' on media: {media_id}")
             return {"status": "ignored", "message": "No active automation triggers matched this comment"}
             
-        logger.info("=== AUTOMATION MATCHED ===")
-        logger.info(f"Automation ID: {matched_auto.id}")
-        logger.info(f"Automation Name: {matched_auto.name}")
+        logger.info("=== AUTOMATION_MATCHED ===")
+        logger.info(f"AUTOMATION_MATCHED: id={matched_auto.id}, name={matched_auto.name}, trigger={matched_auto.trigger_type}, keyword={match_keyword}")
             
         # Compile direct message
         post_caption = "Simulated Post"
