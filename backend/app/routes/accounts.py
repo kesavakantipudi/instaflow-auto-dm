@@ -220,21 +220,22 @@ def get_account_diagnostics(
     # 1. Fetch subscription status from Meta
     subscription = instagram_service.get_subscription_status(account.access_token, account.id)
     
-    # 2. Fetch token permissions from Meta
+    # 2. Fetch token permissions from Meta using debug_token
     permissions = []
     if not account.access_token.startswith("mock_") and account.access_token:
         try:
-            perm_url = "https://graph.instagram.com/me/permissions"
-            res = requests.get(perm_url, params={"access_token": account.access_token}, timeout=10)
-            perm_data = res.json()
-            if "error" in perm_data:
-                # Try fallback to graph.facebook.com
-                fb_perm_url = "https://graph.facebook.com/me/permissions"
-                res = requests.get(fb_perm_url, params={"access_token": account.access_token}, timeout=10)
-                perm_data = res.json()
-            permissions = perm_data.get("data", [])
+            from app.config import settings
+            app_token = f"{settings.META_CLIENT_ID}|{settings.META_CLIENT_SECRET}"
+            res = requests.get(
+                "https://graph.facebook.com/debug_token",
+                params={"input_token": account.access_token, "access_token": app_token},
+                timeout=10
+            )
+            debug_data = res.json()
+            scopes = debug_data.get("data", {}).get("scopes", [])
+            permissions = [{"permission": s, "status": "granted"} for s in scopes]
         except Exception as e:
-            logger.warning(f"Could not fetch token permissions: {e}")
+            logger.warning(f"Could not fetch token permissions via debug_token: {e}")
             permissions = [{"error": str(e)}]
     else:
         permissions = [
@@ -268,4 +269,100 @@ def get_account_diagnostics(
         "subscribed_fields": list(set(subscribed_fields_list)),
         "available_permissions": permissions,
         "webhook_configuration_status": webhook_configured
+    }
+
+@router.get("/{account_id}/token-debug")
+def get_account_token_debug(
+    account_id: str,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Temporary endpoint to inspect permissions, scopes, and token validity using the debug_token endpoint.
+    """
+    account = db.query(models.InstagramAccount).filter(
+        models.InstagramAccount.id == account_id,
+        models.InstagramAccount.user_id == current_user.id
+    ).first()
+    
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Instagram account not found"
+        )
+        
+    import requests
+    import json
+    from app.config import settings
+    
+    access_token = account.access_token
+    
+    # Task 2: Log the raw response body from graph.instagram.com/me/permissions
+    # and graph.facebook.com/me/permissions
+    logger.info("=== RAW PERMISSIONS ENDPOINT TEST ===")
+    
+    insta_perm_body = "N/A"
+    insta_perm_status = 0
+    try:
+        res1 = requests.get("https://graph.instagram.com/me/permissions", params={"access_token": access_token}, timeout=10)
+        insta_perm_status = res1.status_code
+        insta_perm_body = res1.text
+        logger.info(f"graph.instagram.com/me/permissions - Code: {insta_perm_status}, Body: {insta_perm_body}")
+    except Exception as e:
+        logger.exception("Failed to query graph.instagram.com/me/permissions")
+        insta_perm_body = f"Exception: {str(e)}"
+        
+    fb_perm_body = "N/A"
+    fb_perm_status = 0
+    try:
+        res2 = requests.get("https://graph.facebook.com/me/permissions", params={"access_token": access_token}, timeout=10)
+        fb_perm_status = res2.status_code
+        fb_perm_body = res2.text
+        logger.info(f"graph.facebook.com/me/permissions - Code: {fb_perm_status}, Body: {fb_perm_body}")
+    except Exception as e:
+        logger.exception("Failed to query graph.facebook.com/me/permissions")
+        fb_perm_body = f"Exception: {str(e)}"
+        
+    # Task 3/4: Query debug_token to find out actual scopes
+    debug_data = {}
+    scopes = []
+    if not access_token.startswith("mock_") and access_token:
+        try:
+            app_id = settings.META_CLIENT_ID
+            app_secret = settings.META_CLIENT_SECRET
+            app_token = f"{app_id}|{app_secret}"
+            
+            logger.info("Querying debug_token endpoint...")
+            debug_res = requests.get(
+                "https://graph.facebook.com/debug_token",
+                params={"input_token": access_token, "access_token": app_token},
+                timeout=10
+            )
+            debug_data = debug_res.json()
+            logger.info(f"debug_token response: {debug_data}")
+            
+            scopes = debug_data.get("data", {}).get("scopes", [])
+        except Exception as e:
+            logger.exception("Failed to query debug_token endpoint")
+            debug_data = {"error": str(e)}
+    else:
+        scopes = ["instagram_basic", "instagram_manage_comments", "instagram_manage_messages"]
+        debug_data = {"data": {"scopes": scopes, "is_valid": True}}
+        
+    return {
+        "token_type": debug_data.get("data", {}).get("type", "unknown"),
+        "scopes": scopes,
+        "instagram_id": account.id,
+        "username": account.username,
+        "debug_token_raw": debug_data,
+        "raw_responses": {
+            "instagram_permissions": {
+                "status": insta_perm_status,
+                "body": insta_perm_body
+            },
+            "facebook_permissions": {
+                "status": fb_perm_status,
+                "body": fb_perm_body
+            }
+        }
     }
