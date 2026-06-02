@@ -325,7 +325,7 @@ class DMService:
                 db.commit()
                 logger.info(f"Sent follow-up {index+1} to {username}: status={log.status}")
             except Exception as ex:
-                logger.error(f"Failed to execute follow-up: {ex}")
+                logger.exception("Failed to execute follow-up")
             finally:
                 db.close()
                 
