@@ -250,6 +250,7 @@ class InstagramService:
         """
         Subscribes the Instagram account to the webhook changes (comments).
         """
+        import json
         if access_token.startswith("mock_") or not access_token:
             logger.info(f"[SIMULATED SUBSCRIBE] Subscribed account {instagram_id} to webhooks.")
             return {"success": True}
@@ -261,12 +262,15 @@ class InstagramService:
                 "subscribed_fields": "comments,messages",
                 "access_token": access_token
             }
-            logger.info(f"Subscribing Instagram account {instagram_id} to app webhooks. URL: {url}")
+            logger.info("=== WEBHOOK SUBSCRIPTION ATTEMPT ===")
+            logger.info(f"Instagram ID: {instagram_id}")
+            logger.info(f"Endpoint: {url}")
+            
             response = requests.post(url, params=params, timeout=10)
             status_code = response.status_code
             data = response.json()
             logger.info(f"Subscription Response Code: {status_code}")
-            logger.info(f"Subscription Response: {data}")
+            logger.info(f"Subscription Response Body: {json.dumps(data)}")
             
             if "error" in data:
                 # If graph.instagram.com fails, try graph.facebook.com as a fallback
@@ -274,10 +278,13 @@ class InstagramService:
                 fb_url = f"https://graph.facebook.com/v19.0/{instagram_id}/subscribed_apps"
                 fb_res = requests.post(fb_url, params=params, timeout=10)
                 logger.info(f"Fallback Subscription Response Code: {fb_res.status_code}")
-                logger.info(f"Fallback Subscription Response: {fb_res.json()}")
+                logger.info(f"Fallback Subscription Response Body: {json.dumps(fb_res.json())}")
                 data = fb_res.json()
                 if "error" in data:
+                    logger.error(f"Subscription status: FAILED. Error: {data['error'].get('message')}")
                     raise Exception(data["error"]["message"])
+            
+            logger.info("Subscription status: SUCCESS")
             return data
         except Exception as e:
             logger.exception("Failed to subscribe Instagram account to app webhooks")

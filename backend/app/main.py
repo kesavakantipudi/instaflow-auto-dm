@@ -63,5 +63,42 @@ def health_check(db: Session = Depends(get_db)):
         "database_status": db_status
     }
 
+@app.on_event("startup")
+def startup_event():
+    import logging
+    from app.database import SessionLocal
+    from app import models
+    from app.services.instagram import instagram_service
+    
+    logger = logging.getLogger("app.main")
+    logger.info("Running startup webhook subscription diagnostics...")
+    
+    db = SessionLocal()
+    try:
+        account = db.query(models.InstagramAccount).first()
+        if not account:
+            logger.info("Instagram webhook subscription status: NO_CONNECTED_ACCOUNTS")
+            return
+            
+        sub = instagram_service.get_subscription_status(account.access_token, account.id)
+        sub_data = sub.get("data", [])
+        has_comments = False
+        if sub_data and isinstance(sub_data, list):
+            for app_sub in sub_data:
+                fields = app_sub.get("subscribed_fields", [])
+                if "comments" in fields:
+                    has_comments = True
+                    break
+        
+        if has_comments:
+            logger.info("Instagram webhook subscription status: ACTIVE")
+        else:
+            logger.error("Instagram webhook subscription status: FAILED")
+    except Exception as e:
+        logger.exception("Startup subscription diagnostic failed")
+        logger.error("Instagram webhook subscription status: FAILED")
+    finally:
+        db.close()
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -20,6 +20,39 @@ def get_accounts(
     ).all()
     return accounts
 
+def _log_connection_diagnostics(access_token: str, info: dict):
+    logger.info("=== CONNECT ACCOUNT WEBHOOK DIAGNOSTIC ===")
+    logger.info(f"Instagram ID: {info.get('id')}")
+    logger.info(f"Username: {info.get('username')}")
+    
+    # Run subscription
+    sub_res = None
+    try:
+        sub_res = instagram_service.subscribe_account(access_token, info["id"])
+        logger.info(f"Subscription API Response: {sub_res}")
+    except Exception as sub_err:
+        logger.error(f"Subscription API Response (Failed): {sub_err}")
+        
+    # Get permissions
+    import requests
+    permissions = []
+    if not access_token.startswith("mock_") and access_token:
+        try:
+            res = requests.get("https://graph.instagram.com/me/permissions", params={"access_token": access_token}, timeout=10)
+            perm_data = res.json()
+            if "error" in perm_data:
+                res = requests.get("https://graph.facebook.com/me/permissions", params={"access_token": access_token}, timeout=10)
+                perm_data = res.json()
+            permissions = perm_data.get("data", [])
+        except Exception as perm_ex:
+            logger.warning(f"Failed to fetch permissions during connect: {perm_ex}")
+    else:
+        permissions = [{"permission": "instagram_basic", "status": "granted"}]
+        
+    logger.info(f"Granted Permissions: {permissions}")
+    logger.info("==========================================")
+    return sub_res
+
 class ConnectAccountPayload(schemas.BaseModel):
     access_token: str = None
     code: str = None
@@ -77,11 +110,8 @@ def connect_account(
             existing.page_access_token = info.get("page_access_token")
             existing.is_connected = True
             
-            # Subscribe to webhooks
-            try:
-                instagram_service.subscribe_account(access_token, info["id"])
-            except Exception as sub_err:
-                logger.warning(f"Webhook subscription auto-registration failed: {sub_err}")
+            # Subscribe & Log Diagnostics
+            _log_connection_diagnostics(access_token, info)
                 
             db.commit()
             db.refresh(existing)
@@ -101,11 +131,8 @@ def connect_account(
             webhook_status=True
         )
         
-        # Subscribe to webhooks
-        try:
-            instagram_service.subscribe_account(access_token, info["id"])
-        except Exception as sub_err:
-            logger.warning(f"Webhook subscription auto-registration failed: {sub_err}")
+        # Subscribe & Log Diagnostics
+        _log_connection_diagnostics(access_token, info)
             
         db.add(new_account)
         db.commit()
