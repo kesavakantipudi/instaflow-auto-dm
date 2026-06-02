@@ -92,6 +92,10 @@ class AutomationBase(BaseModel):
     scope_type: str = "all_posts"
     comment_filter_type: str = "exact"
     message_template: str
+    comment_reply_enabled: bool = True
+    comment_reply_template: Optional[str] = "Thanks for commenting! Check your DMs 🚀"
+    dm_enabled: bool = True
+    dm_template: Optional[str] = None
     follow_ups: List[Dict[str, Any]] = []
     attachments: List[Dict[str, Any]] = []
 
@@ -106,6 +110,10 @@ class AutomationUpdate(BaseModel):
     scope_type: Optional[str] = None
     comment_filter_type: Optional[str] = None
     message_template: Optional[str] = None
+    comment_reply_enabled: Optional[bool] = None
+    comment_reply_template: Optional[str] = None
+    dm_enabled: Optional[bool] = None
+    dm_template: Optional[str] = None
     follow_ups: Optional[List[Dict[str, Any]]] = None
     attachments: Optional[List[Dict[str, Any]]] = None
     keywords: Optional[List[str]] = None

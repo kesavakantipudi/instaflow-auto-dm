@@ -78,6 +78,10 @@ def create_automation(
         scope_type=payload.scope_type,
         comment_filter_type=payload.comment_filter_type,
         message_template=payload.message_template,
+        comment_reply_enabled=payload.comment_reply_enabled,
+        comment_reply_template=payload.comment_reply_template,
+        dm_enabled=payload.dm_enabled,
+        dm_template=payload.dm_template,
         follow_ups=payload.follow_ups,
         attachments=payload.attachments
     )
@@ -211,6 +215,10 @@ def duplicate_automation(
         scope_type=auto.scope_type,
         comment_filter_type=auto.comment_filter_type,
         message_template=auto.message_template,
+        comment_reply_enabled=auto.comment_reply_enabled,
+        comment_reply_template=auto.comment_reply_template,
+        dm_enabled=auto.dm_enabled,
+        dm_template=auto.dm_template,
         follow_ups=auto.follow_ups,
         attachments=auto.attachments
     )

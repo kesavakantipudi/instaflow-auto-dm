@@ -9,6 +9,23 @@ from app.routes import auth, accounts, automations, webhooks, analytics, logs, s
 try:
     Base.metadata.create_all(bind=engine)
     print("Database tables initialized successfully.")
+    
+    # Dynamic database upgrade for new comment reply and DM configuration fields
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        for column, col_type in [
+            ("comment_reply_enabled", "BOOLEAN DEFAULT TRUE"),
+            ("comment_reply_template", "TEXT DEFAULT 'Thanks for commenting! Check your DMs 🚀'"),
+            ("dm_enabled", "BOOLEAN DEFAULT TRUE"),
+            ("dm_template", "TEXT")
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE automations ADD COLUMN {column} {col_type};"))
+                conn.commit()
+                print(f"Database Upgrade: Added column '{column}' to automations table.")
+            except Exception:
+                # Column already exists, safe to ignore
+                pass
 except Exception as e:
     print(f"Error initializing database: {e}")
 

@@ -67,20 +67,26 @@ class DMService:
                 return {"status": "ignored", "message": "Duplicate comment_id. Already processed."}
 
         # Fetch connected account
+        logger.info("=== AUTOMATION_LOOKUP_STARTED ===")
+        logger.info(f"AUTOMATION_LOOKUP_STARTED: instagram_account_id={instagram_account_id}")
+        
         account = db.query(models.InstagramAccount).filter(
-            models.InstagramAccount.id == instagram_account_id
+            (models.InstagramAccount.id == instagram_account_id) |
+            (models.InstagramAccount.page_id == instagram_account_id)
         ).first()
+        
         if not account:
             logger.error(f"DM Service: Instagram account not found for ID '{instagram_account_id}' in database. Aborting.")
             return {"status": "error", "message": "Instagram account not found"}
             
         # Fetch active automations for this account
         automations = db.query(models.Automation).filter(
-            models.Automation.instagram_account_id == instagram_account_id,
+            models.Automation.instagram_account_id == account.id,
             models.Automation.status == "active"
         ).all()
         
-        logger.info(f"DM Service: Loaded {len(automations)} active automations for account {instagram_account_id}")
+        logger.info("=== AUTOMATIONS_FOUND_COUNT ===")
+        logger.info(f"AUTOMATIONS_FOUND_COUNT: count={len(automations)} active automations found for account.id={account.id}")
         
         matched_auto = None
         match_keyword = None
@@ -180,57 +186,77 @@ class DMService:
         logger.info("=== AUTOMATION_MATCHED ===")
         logger.info(f"AUTOMATION_MATCHED: id={matched_auto.id}, name={matched_auto.name}, trigger={matched_auto.trigger_type}, keyword={match_keyword}")
             
-        # Compile direct message
-        post_caption = "Simulated Post"
-        post_record = db.query(models.AutomationPost).filter(models.AutomationPost.media_id == media_id).first()
-        if post_record and post_record.caption:
-            post_caption = post_record.caption[:30] + "..."
-            
-        raw_msg = cls.interpolate_template(
-            template=matched_auto.message_template,
+        # Compile messages
+        # DM message compilation
+        raw_dm_msg = matched_auto.dm_template if matched_auto.dm_template else matched_auto.message_template
+        final_dm_msg = cls.interpolate_template(
+            template=raw_dm_msg,
+            username=username,
+            comment=comment_text,
+            post_name=post_caption
+        )
+        final_dm_msg = cls.format_message_with_attachments(final_dm_msg, matched_auto.attachments)
+        
+        # Comment reply message compilation
+        raw_comment_reply = matched_auto.comment_reply_template if matched_auto.comment_reply_template else "Thanks for commenting! Check your DMs 🚀"
+        final_comment_reply = cls.interpolate_template(
+            template=raw_comment_reply,
             username=username,
             comment=comment_text,
             post_name=post_caption
         )
         
-        final_msg = cls.format_message_with_attachments(raw_msg, matched_auto.attachments)
         logger.info("=== REPLY TEMPLATE COMPILED ===")
-        logger.info(f"Message Content: {final_msg}")
+        logger.info(f"DM Content: {final_dm_msg}")
+        logger.info(f"Comment Reply Content: {final_comment_reply}")
         
-        # Send immediate DM
+        logger.info("=== REPLY_PIPELINE_STARTED ===")
+        logger.info(f"REPLY_PIPELINE_STARTED: comment_id={comment_id}")
+        
         success = True
-        error_msg = None
-        try:
-            instagram_service.send_dm(
-                access_token=account.access_token,
-                recipient_id=f"user_{username}",
-                message=final_msg,
-                comment_id=comment_id,
-                media_id=media_id,
-                account_id=instagram_account_id,
-                page_access_token=account.page_access_token
-            )
-            logger.info("=== INSTAGRAM REPLY SENT ===")
-            
-            # Send public comment reply (e.g. "Sent you a DM! Check your inbox.")
-            if comment_id:
-                try:
-                    public_msg = f"Sent you a DM! Check your inbox. 🚀"
-                    instagram_service.send_comment_reply(
-                        access_token=account.access_token,
-                        comment_id=comment_id,
-                        message=public_msg,
-                        media_id=media_id,
-                        account_id=instagram_account_id,
-                        page_access_token=account.page_access_token
-                    )
-                    logger.info("=== INSTAGRAM PUBLIC COMMENT REPLY SENT ===")
-                except Exception as pub_ex:
-                    logger.exception("Failed to send public comment reply")
-        except Exception as e:
-            success = False
-            error_msg = str(e)
-            logger.exception("DM Service: Failed to deliver Instagram DM")
+        error_msgs = []
+        
+        # 1. Public Comment Reply
+        if comment_id and getattr(matched_auto, "comment_reply_enabled", True):
+            logger.info("=== COMMENT_REPLY_STARTED ===")
+            logger.info(f"COMMENT_REPLY_STARTED: comment_id={comment_id}")
+            try:
+                instagram_service.send_comment_reply(
+                    access_token=account.access_token,
+                    comment_id=comment_id,
+                    message=final_comment_reply,
+                    media_id=media_id,
+                    account_id=account.id,
+                    page_access_token=account.page_access_token
+                )
+                logger.info("=== COMMENT_REPLY_SUCCESS ===")
+            except Exception as e:
+                logger.error("=== COMMENT_REPLY_FAILED ===")
+                logger.info(f"META_RESPONSE_BODY: {str(e)}")
+                error_msgs.append(f"Comment Reply failed: {str(e)}")
+                
+        # 2. Private DM
+        if getattr(matched_auto, "dm_enabled", True):
+            logger.info("=== DM_STARTED ===")
+            logger.info(f"DM_STARTED: recipient={username}")
+            try:
+                instagram_service.send_dm(
+                    access_token=account.access_token,
+                    recipient_id=f"user_{username}",
+                    message=final_dm_msg,
+                    comment_id=comment_id,
+                    media_id=media_id,
+                    account_id=account.id,
+                    page_access_token=account.page_access_token
+                )
+                logger.info("=== DM_SUCCESS ===")
+            except Exception as e:
+                logger.error("=== DM_FAILED ===")
+                logger.info(f"META_RESPONSE_BODY: {str(e)}")
+                error_msgs.append(f"DM failed: {str(e)}")
+                success = False
+                
+        error_msg = "; ".join(error_msgs) if error_msgs else None
             
         # Save Activity Log
         log = models.ActivityLog(
@@ -241,14 +267,15 @@ class DMService:
             comment_id=comment_id or f"comment_{int(datetime.datetime.utcnow().timestamp())}",
             comment_text=comment_text,
             trigger_matched=f"{matched_auto.trigger_type.upper()}: {match_keyword}",
-            dm_sent=final_msg,
+            dm_sent=final_dm_msg,
             status="success" if success else "failed",
             error_detail=error_msg
         )
         db.add(log)
         db.commit()
         db.refresh(log)
-        logger.info(f"DM Service: Saved ActivityLog record with ID {log.id} and status '{log.status}'")
+        logger.info("=== ACTIVITY_LOG_INSERTED ===")
+        logger.info(f"ACTIVITY_LOG_INSERTED: log_id={log.id}, status={log.status}")
         
         # Trigger Follow-up sequences in background
         if success and matched_auto.follow_ups:
@@ -352,4 +379,39 @@ class DMService:
             finally:
                 db.close()
                 
+    @classmethod
+    def match_and_process_comment_async(
+        cls,
+        username: str,
+        comment_text: str,
+        media_id: str,
+        instagram_account_id: str,
+        comment_id: str = None
+    ):
+        """
+        Wrapper to run match_and_process_comment in a background task with its own DB session.
+        """
+        from app.database import SessionLocal
+        from fastapi import BackgroundTasks
+        
+        logger.info(f"=== PROCESS_COMMENT_EVENT_STARTED ===")
+        logger.info(f"PROCESS_COMMENT_EVENT_STARTED: comment_id={comment_id}, media_id={media_id}, username={username}")
+        
+        db = SessionLocal()
+        bg_tasks = BackgroundTasks()
+        try:
+            cls.match_and_process_comment(
+                db=db,
+                username=username,
+                comment_text=comment_text,
+                media_id=media_id,
+                instagram_account_id=instagram_account_id,
+                background_tasks=bg_tasks,
+                comment_id=comment_id
+            )
+        except Exception as e:
+            logger.exception("Error in match_and_process_comment_async")
+        finally:
+            db.close()
+
 dm_service = DMService()

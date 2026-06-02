@@ -60,6 +60,10 @@ class Automation(Base):
     
     # Response details
     message_template = Column(Text, nullable=False)
+    comment_reply_enabled = Column(Boolean, default=True)
+    comment_reply_template = Column(Text, nullable=True, default="Thanks for commenting! Check your DMs 🚀")
+    dm_enabled = Column(Boolean, default=True)
+    dm_template = Column(Text, nullable=True)
     follow_ups = Column(JSON, default=list)  # List of follow-ups: [{"delay_hours": 24, "message": "..."}]
     attachments = Column(JSON, default=list)  # List of links/resources: [{"type": "pdf", "url": "..."}]
     

@@ -38,6 +38,12 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
   const [commentFilterType, setCommentFilterType] = useState("contains");
   const [messageTemplate, setMessageTemplate] = useState("");
 
+  // Toggles and Templates for public comment replies and private DMs
+  const [commentReplyEnabled, setCommentReplyEnabled] = useState(true);
+  const [commentReplyTemplate, setCommentReplyTemplate] = useState("Thanks for commenting! Check your DMs 🚀");
+  const [dmEnabled, setDmEnabled] = useState(true);
+  const [dmTemplate, setDmTemplate] = useState("");
+
   // Keywords
   const [keywords, setKeywords] = useState<string[]>([]);
   const [keywordInput, setKeywordInput] = useState("");
@@ -58,11 +64,16 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
   const [followHours, setFollowHours] = useState("24");
   const [followMsg, setFollowMsg] = useState("");
 
-  // UI Tabs / Steps
+  // UI Tabs / Steps (updated to 5 steps)
   const [activeStep, setActiveStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+
+  // Step entry debugging log
+  useEffect(() => {
+    console.log(`[AUTOMATION_STEP_ENTERED] Entered Step ${activeStep}`);
+  }, [activeStep]);
 
   // AI assist state
   const [aiGeneratingReply, setAiGeneratingReply] = useState(false);
@@ -97,6 +108,12 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
         setCommentFilterType(auto.comment_filter_type);
         setMessageTemplate(auto.message_template);
         setSelectedAccountId(auto.instagram_account_id);
+
+        // Load new fields
+        setCommentReplyEnabled(auto.comment_reply_enabled !== false);
+        setCommentReplyTemplate(auto.comment_reply_template || "Thanks for commenting! Check your DMs 🚀");
+        setDmEnabled(auto.dm_enabled !== false);
+        setDmTemplate(auto.dm_template || auto.message_template || "");
 
         // Keywords
         if (auto.keywords) {
@@ -266,7 +283,10 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
 
   // Compile final mock message for visual preview
   const getSimulatedPreviewText = () => {
-    let preview = messageTemplate || "Configure your DM template in Step 3...";
+    if (!dmEnabled) {
+      return "[DM Automated Delivery is disabled]";
+    }
+    let preview = dmTemplate || messageTemplate || "Configure your DM template in Step 4...";
     preview = preview.replace(/{username}/g, "john_doe");
     preview = preview.replace(/{comment}/g, "python course please!");
     preview = preview.replace(/{post_name}/g, "Python playlist live! 🚀");
@@ -281,8 +301,8 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
   // Form Submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !selectedAccountId || !messageTemplate) {
-      setError("Please fill in Name, Account, and Message Template.");
+    if (!name || !selectedAccountId) {
+      setError("Please fill in Name and Account.");
       return;
     }
 
@@ -296,7 +316,11 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
       trigger_type: triggerType,
       scope_type: scopeType,
       comment_filter_type: commentFilterType,
-      message_template: messageTemplate,
+      message_template: dmTemplate || messageTemplate || "Thanks for commenting!",
+      comment_reply_enabled: commentReplyEnabled,
+      comment_reply_template: commentReplyTemplate,
+      dm_enabled: dmEnabled,
+      dm_template: dmTemplate || messageTemplate || "Thanks for commenting!",
       keywords,
       posts: scopeType === "selected_posts" ? selectedPosts : [],
       attachments,
@@ -350,6 +374,7 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
           {/* Step Badges */}
           <div className="glass-panel p-3 rounded-xl border border-slate-900 flex items-center justify-between text-xs font-semibold">
             <button
+              type="button"
               onClick={() => setActiveStep(1)}
               className={`px-3 py-1.5 rounded-lg transition-all ${activeStep === 1 ? "bg-cyan-500/10 text-cyan-400" : "text-slate-400"}`}
             >
@@ -357,6 +382,7 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
             </button>
             <ChevronRight className="w-4 h-4 text-slate-700" />
             <button
+              type="button"
               onClick={() => setActiveStep(2)}
               className={`px-3 py-1.5 rounded-lg transition-all ${activeStep === 2 ? "bg-cyan-500/10 text-cyan-400" : "text-slate-400"}`}
             >
@@ -364,17 +390,27 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
             </button>
             <ChevronRight className="w-4 h-4 text-slate-700" />
             <button
+              type="button"
               onClick={() => setActiveStep(3)}
               className={`px-3 py-1.5 rounded-lg transition-all ${activeStep === 3 ? "bg-cyan-500/10 text-cyan-400" : "text-slate-400"}`}
             >
-              3. Message & AI
+              3. Comment Reply
             </button>
             <ChevronRight className="w-4 h-4 text-slate-700" />
             <button
+              type="button"
               onClick={() => setActiveStep(4)}
               className={`px-3 py-1.5 rounded-lg transition-all ${activeStep === 4 ? "bg-cyan-500/10 text-cyan-400" : "text-slate-400"}`}
             >
-              4. Follow-ups
+              4. DM Message
+            </button>
+            <ChevronRight className="w-4 h-4 text-slate-700" />
+            <button
+              type="button"
+              onClick={() => setActiveStep(5)}
+              className={`px-3 py-1.5 rounded-lg transition-all ${activeStep === 5 ? "bg-cyan-500/10 text-cyan-400" : "text-slate-400"}`}
+            >
+              5. Follow-ups
             </button>
           </div>
 
@@ -613,207 +649,312 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
               </div>
             )}
 
-            {/* STEP 3: Message builder and AI styling options */}
+             {/* STEP 3: Public Comment Reply */}
             {activeStep === 3 && (
               <div className="glass-panel p-6 rounded-2xl border border-slate-900 space-y-6">
                 <h3 className="font-bold text-base border-b border-slate-900 pb-3 flex items-center gap-2">
-                  <MessageSquare className="w-5 h-5 text-cyan-400" /> 3. Direct Message Builder & AI Styling
+                  <MessageSquare className="w-5 h-5 text-cyan-400" /> 3. Public Comment Reply Configuration
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                  {/* Message templates edit */}
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
-                        DM Message Template
-                      </label>
-                    </div>
-
-                    {/* Tag insert helper row */}
-                    <div className="flex flex-wrap gap-1.5 p-2 rounded-lg bg-slate-900/60 border border-slate-800/80">
-                      <button
-                        type="button"
-                        onClick={() => insertVariable("{username}")}
-                        className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
-                      >
-                        + Username
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => insertVariable("{comment}")}
-                        className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
-                      >
-                        + Comment
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => insertVariable("{post_name}")}
-                        className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
-                      >
-                        + Post Name
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => insertVariable("{date}")}
-                        className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
-                      >
-                        + Date
-                      </button>
-                    </div>
-
-                    <textarea
-                      ref={messageTextareaRef}
-                      value={messageTemplate}
-                      onChange={(e) => setMessageTemplate(e.target.value)}
-                      rows={8}
-                      className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs font-sans text-slate-200 placeholder-slate-600 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20"
-                      placeholder="Hey {username}! 👋..."
-                      required
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 p-4 rounded-xl border border-slate-900 bg-slate-950/40">
+                    <input
+                      type="checkbox"
+                      id="commentReplyEnabled"
+                      checked={commentReplyEnabled}
+                      onChange={(e) => setCommentReplyEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded text-cyan-500 focus:ring-cyan-500 bg-slate-950 border-slate-800"
                     />
+                    <label htmlFor="commentReplyEnabled" className="text-xs font-bold text-slate-300 uppercase tracking-wider cursor-pointer">
+                      Enable Public Comment Reply
+                    </label>
+                  </div>
 
-                    {/* Attachments Section */}
-                    <div className="pt-4 border-t border-slate-900 space-y-4">
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                        <Paperclip className="w-4 h-4 text-cyan-400" /> Attached Resources ({attachments.length})
-                      </h4>
+                  {commentReplyEnabled && (
+                    <div className="space-y-4">
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        Comment Reply Message
+                      </label>
 
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={attachName}
-                          onChange={(e) => setAttachName(e.target.value)}
-                          className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs"
-                          placeholder="Link Display Name (e.g. PDF Guide)"
-                        />
-                        <input
-                          type="text"
-                          value={attachUrl}
-                          onChange={(e) => setAttachUrl(e.target.value)}
-                          className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs"
-                          placeholder="https://..."
-                        />
-                      </div>
-
-                      <div className="flex gap-2 justify-between">
-                        <select
-                          value={attachType}
-                          onChange={(e) => setAttachType(e.target.value)}
-                          className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-300"
-                        >
-                          <option value="link">Custom URL</option>
-                          <option value="pdf">PDF File Link</option>
-                          <option value="notion">Notion Workspace</option>
-                          <option value="drive">Google Drive Link</option>
-                          <option value="playlist">YouTube Playlist</option>
-                        </select>
-
+                      {/* Tag insert helper row */}
+                      <div className="flex flex-wrap gap-1.5 p-2 rounded-lg bg-slate-900/60 border border-slate-800/80">
                         <button
                           type="button"
-                          onClick={addAttachment}
-                          className="px-4 py-2 rounded-lg bg-cyan-950/40 border border-cyan-950 text-cyan-400 text-xs font-bold hover:bg-cyan-950/60"
+                          onClick={() => setCommentReplyTemplate(prev => prev + "{username}")}
+                          className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
                         >
-                          Attach Resource
+                          + Username
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCommentReplyTemplate(prev => prev + "{comment}")}
+                          className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
+                        >
+                          + Comment
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCommentReplyTemplate(prev => prev + "{post_name}")}
+                          className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
+                        >
+                          + Post Name
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCommentReplyTemplate(prev => prev + "{date}")}
+                          className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
+                        >
+                          + Date
                         </button>
                       </div>
 
-                      <div className="space-y-2">
-                        {attachments.map((att, idx) => (
-                          <div key={idx} className="flex justify-between items-center p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-                            <span className="truncate max-w-[200px] font-semibold text-slate-200">🔗 {att.name}</span>
-                            <button
-                              type="button"
-                              onClick={() => removeAttachment(idx)}
-                              className="text-slate-500 hover:text-red-400 font-semibold cursor-pointer"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
-                      </div>
+                      <textarea
+                        value={commentReplyTemplate}
+                        onChange={(e) => setCommentReplyTemplate(e.target.value)}
+                        rows={5}
+                        className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs font-sans text-slate-200 placeholder-slate-600 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20"
+                        placeholder="Thanks for commenting, {username}! Check your DMs 🚀"
+                        required={commentReplyEnabled}
+                      />
                     </div>
-                  </div>
-
-                  {/* AI Copywriter panel */}
-                  <div className="p-4 rounded-xl border border-purple-900/30 bg-purple-950/10 space-y-4 h-fit">
-                    <h4 className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-purple-400" /> AI Message Generator
-                    </h4>
-                    <p className="text-[10px] text-slate-400 leading-relaxed">
-                      Style engaging automated templates. Describe what resource you are sharing, pick a style, and apply.
-                    </p>
-
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                          Brief Resource Details
-                        </label>
-                        <input
-                          type="text"
-                          value={aiPrompt}
-                          onChange={(e) => setAiPrompt(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs placeholder-slate-600"
-                          placeholder="e.g. Python coding cheat sheets"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                            Copywriter Tone
-                          </label>
-                          <select
-                            value={aiTone}
-                            onChange={(e) => setAiTone(e.target.value)}
-                            className="w-full px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300"
-                          >
-                            <option value="friendly">Friendly</option>
-                            <option value="professional">Professional</option>
-                            <option value="exciting">Exciting</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                            Resource Type
-                          </label>
-                          <select
-                            value={aiResourceType}
-                            onChange={(e) => setAiResourceType(e.target.value)}
-                            className="w-full px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300"
-                          >
-                            <option value="playlist">Playlist Link</option>
-                            <option value="pdf">PDF File</option>
-                            <option value="notion">Notion page</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={callAIGenerateReply}
-                        disabled={aiGeneratingReply}
-                        className="w-full py-2.5 rounded-xl bg-purple-600 text-white text-xs font-bold hover:bg-purple-500 transition-all flex items-center justify-center gap-1.5"
-                      >
-                        {aiGeneratingReply ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating...
-                          </>
-                        ) : (
-                          "Generate Message template"
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
             )}
 
-            {/* STEP 4: Follow-up Sequences */}
+            {/* STEP 4: Private DM Message */}
             {activeStep === 4 && (
               <div className="glass-panel p-6 rounded-2xl border border-slate-900 space-y-6">
                 <h3 className="font-bold text-base border-b border-slate-900 pb-3 flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-purple-400" /> 4. Follow-up Message Sequence
+                  <MessageSquare className="w-5 h-5 text-indigo-400" /> 4. Private Direct Message (DM) Configuration
+                </h3>
+
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 p-4 rounded-xl border border-slate-900 bg-slate-950/40">
+                    <input
+                      type="checkbox"
+                      id="dmEnabled"
+                      checked={dmEnabled}
+                      onChange={(e) => setDmEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded text-cyan-500 focus:ring-cyan-500 bg-slate-950 border-slate-800"
+                    />
+                    <label htmlFor="dmEnabled" className="text-xs font-bold text-slate-300 uppercase tracking-wider cursor-pointer">
+                      Enable Automated DM Delivery
+                    </label>
+                  </div>
+
+                  {dmEnabled && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Message templates edit */}
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            DM Message Template
+                          </label>
+                        </div>
+
+                        {/* Tag insert helper row */}
+                        <div className="flex flex-wrap gap-1.5 p-2 rounded-lg bg-slate-900/60 border border-slate-800/80">
+                          <button
+                            type="button"
+                            onClick={() => setDmTemplate(prev => prev + "{username}")}
+                            className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
+                          >
+                            + Username
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDmTemplate(prev => prev + "{comment}")}
+                            className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
+                          >
+                            + Comment
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDmTemplate(prev => prev + "{post_name}")}
+                            className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
+                          >
+                            + Post Name
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDmTemplate(prev => prev + "{date}")}
+                            className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-cyan-400 transition-all cursor-pointer"
+                          >
+                            + Date
+                          </button>
+                        </div>
+
+                        <textarea
+                          value={dmTemplate}
+                          onChange={(e) => setDmTemplate(e.target.value)}
+                          rows={8}
+                          className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs font-sans text-slate-200 placeholder-slate-600 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20"
+                          placeholder="Hey {username}! 👋 Here is your link..."
+                          required={dmEnabled}
+                        />
+
+                        {/* Attachments Section */}
+                        <div className="pt-4 border-t border-slate-900 space-y-4">
+                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Paperclip className="w-4 h-4 text-cyan-400" /> Attached Resources ({attachments.length})
+                          </h4>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              value={attachName}
+                              onChange={(e) => setAttachName(e.target.value)}
+                              className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs"
+                              placeholder="Link Display Name (e.g. PDF Guide)"
+                            />
+                            <input
+                              type="text"
+                              value={attachUrl}
+                              onChange={(e) => setAttachUrl(e.target.value)}
+                              className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs"
+                              placeholder="https://..."
+                            />
+                          </div>
+
+                          <div className="flex gap-2 justify-between">
+                            <select
+                              value={attachType}
+                              onChange={(e) => setAttachType(e.target.value)}
+                              className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-300"
+                            >
+                              <option value="link">Custom URL</option>
+                              <option value="pdf">PDF File Link</option>
+                              <option value="notion">Notion Workspace</option>
+                              <option value="drive">Google Drive Link</option>
+                              <option value="playlist">YouTube Playlist</option>
+                            </select>
+
+                            <button
+                              type="button"
+                              onClick={addAttachment}
+                              className="px-4 py-2 rounded-lg bg-cyan-950/40 border border-cyan-950 text-cyan-400 text-xs font-bold hover:bg-cyan-950/60"
+                            >
+                              Attach Resource
+                            </button>
+                          </div>
+
+                          <div className="space-y-2">
+                            {attachments.map((att, idx) => (
+                              <div key={idx} className="flex justify-between items-center p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+                                <span className="truncate max-w-[200px] font-semibold text-slate-200">🔗 {att.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeAttachment(idx)}
+                                  className="text-slate-500 hover:text-red-400 font-semibold cursor-pointer"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* AI Copywriter panel */}
+                      <div className="p-4 rounded-xl border border-purple-900/30 bg-purple-950/10 space-y-4 h-fit">
+                        <h4 className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4 text-purple-400" /> AI Message Generator
+                        </h4>
+                        <p className="text-[10px] text-slate-400 leading-relaxed">
+                          Style engaging automated templates. Describe what resource you are sharing, pick a style, and apply.
+                        </p>
+
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                              Brief Resource Details
+                            </label>
+                            <input
+                              type="text"
+                              value={aiPrompt}
+                              onChange={(e) => setAiPrompt(e.target.value)}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs placeholder-slate-600"
+                              placeholder="e.g. Python coding cheat sheets"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                Copywriter Tone
+                              </label>
+                              <select
+                                value={aiTone}
+                                onChange={(e) => setAiTone(e.target.value)}
+                                className="w-full px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300"
+                              >
+                                <option value="friendly">Friendly</option>
+                                <option value="professional">Professional</option>
+                                <option value="exciting">Exciting</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                Resource Type
+                              </label>
+                              <select
+                                value={aiResourceType}
+                                onChange={(e) => setAiResourceType(e.target.value)}
+                                className="w-full px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300"
+                              >
+                                <option value="playlist">Playlist Link</option>
+                                <option value="pdf">PDF File</option>
+                                <option value="notion">Notion page</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!aiPrompt) {
+                                setError("Please describe the resource briefly to generate a message template.");
+                                return;
+                              }
+                              setAiGeneratingReply(true);
+                              setError("");
+                              try {
+                                const generated = await api.generateReply(aiPrompt, aiTone, aiResourceType);
+                                setDmTemplate(generated);
+                                setSuccessMsg("AI reply styling applied!");
+                                setTimeout(() => setSuccessMsg(""), 3000);
+                              } catch (err: any) {
+                                setError(err.message || "Failed to generate reply template.");
+                              } finally {
+                                setAiGeneratingReply(false);
+                              }
+                            }}
+                            disabled={aiGeneratingReply}
+                            className="w-full py-2.5 rounded-xl bg-purple-600 text-white text-xs font-bold hover:bg-purple-500 transition-all flex items-center justify-center gap-1.5"
+                          >
+                            {aiGeneratingReply ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating...
+                              </>
+                            ) : (
+                              "Generate Message template"
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* STEP 5: Follow-up Sequences */}
+            {activeStep === 5 && (
+              <div className="glass-panel p-6 rounded-2xl border border-slate-900 space-y-6">
+                <h3 className="font-bold text-base border-b border-slate-900 pb-3 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-purple-400" /> 5. Follow-up Message Sequence
                 </h3>
 
                 <div className="space-y-6">
@@ -900,24 +1041,33 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
             {/* Navigation buttons */}
             <div className="flex justify-between items-center">
               <button
+                key="prev-btn"
                 type="button"
                 disabled={activeStep === 1}
-                onClick={() => setActiveStep(activeStep - 1)}
+                onClick={() => {
+                  console.log(`[AUTOMATION_STEP_SKIPPED] Skipped Step: ${activeStep}, Reason: User clicked Previous Step`);
+                  setActiveStep(activeStep - 1);
+                }}
                 className="px-4 py-2.5 rounded-xl border border-slate-800 bg-slate-900/30 text-xs font-bold text-slate-400 hover:text-white transition-all disabled:opacity-30 cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4 inline-block mr-1" /> Previous Step
               </button>
 
-              {activeStep < 4 ? (
+              {activeStep < 5 ? (
                 <button
+                  key="next-btn"
                   type="button"
-                  onClick={() => setActiveStep(activeStep + 1)}
+                  onClick={() => {
+                    console.log(`[AUTOMATION_STEP_COMPLETED] Completed Step: ${activeStep}, Reason: Next step clicked`);
+                    setActiveStep(activeStep + 1);
+                  }}
                   className="px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-bold text-slate-200 hover:text-white transition-all flex items-center gap-1 cursor-pointer"
                 >
                   Next Step <ChevronRight className="w-4 h-4" />
                 </button>
               ) : (
                 <button
+                  key="save-btn"
                   type="submit"
                   disabled={loading}
                   className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-cyan-500 text-slate-950 font-bold hover:shadow-lg hover:shadow-cyan-500/10 transition-all text-xs flex items-center gap-1.5"
