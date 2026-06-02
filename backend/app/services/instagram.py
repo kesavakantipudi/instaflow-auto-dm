@@ -15,8 +15,10 @@ class InstagramService:
         
         # Sandbox / local simulation support
         if code.startswith("mock_"):
+            logger.info("Instagram OAuth: Using sandbox simulation mode.")
             return "mock_kesava_creator_token"
             
+        logger.info(f"Instagram OAuth: Starting code exchange. Redirect URI: {redirect_uri}")
         try:
             # Step 1: Exchange code for short-lived token
             url = "https://api.instagram.com/oauth/access_token"
@@ -27,15 +29,24 @@ class InstagramService:
                 "redirect_uri": redirect_uri,
                 "code": code
             }
+            
             response = requests.post(url, data=payload, timeout=10)
             data = response.json()
+            
             if "error" in data:
                 error_msg = data.get("error_message") or (data["error"].get("message") if isinstance(data.get("error"), dict) else "Unknown error")
+                logger.error(f"Instagram OAuth: Code exchange failed. Error: {error_msg}")
                 raise Exception(error_msg)
                 
-            short_lived_token = data["access_token"]
+            short_lived_token = data.get("access_token")
+            if not short_lived_token:
+                logger.error("Instagram OAuth: Code exchange succeeded but access_token is missing from response.")
+                raise Exception("Access token missing in OAuth response")
+                
+            logger.info("Instagram OAuth: Short-lived access token retrieved successfully.")
             
             # Step 2: Exchange short-lived token for long-lived (60 days) token
+            logger.info("Instagram OAuth: Requesting long-lived access token.")
             long_lived_url = "https://graph.instagram.com/access_token"
             params = {
                 "grant_type": "ig_exchange_token",
@@ -44,21 +55,30 @@ class InstagramService:
             }
             ll_response = requests.get(long_lived_url, params=params, timeout=10)
             ll_data = ll_response.json()
+            
             if "error" in ll_data:
-                # Fallback to short-lived token
+                ll_error = ll_data["error"].get("message") if isinstance(ll_data.get("error"), dict) else "Unknown error"
+                logger.warning(f"Instagram OAuth: Long-lived token promotion failed. Falling back to short-lived token. Detail: {ll_error}")
                 return short_lived_token
                 
-            return ll_data.get("access_token") or short_lived_token
+            long_lived_token = ll_data.get("access_token")
+            if long_lived_token:
+                logger.info("Instagram OAuth: Long-lived access token retrieved successfully.")
+                return long_lived_token
+                
+            logger.warning("Instagram OAuth: Long-lived promotion returned empty token. Falling back to short-lived token.")
+            return short_lived_token
         except Exception as e:
-            logger.error(f"Error exchanging authorization code: {e}")
+            logger.error(f"Instagram OAuth: Critical error during code exchange process: {e}")
             raise Exception(f"OAuth code exchange failed: {str(e)}")
 
     @staticmethod
     def get_account_info(access_token: str) -> Dict[str, Any]:
         """
-        Gets details of connected business account. Falls back to mock data if it is a mock token.
+        Gets details of connected professional Instagram account. Falls back to mock data for simulated logins.
         """
         if access_token.startswith("mock_") or not access_token:
+            logger.info("Instagram Profile API: Utilizing simulated sandbox account profile.")
             return {
                 "id": "ig_creator_12345",
                 "username": "kesava_ai_creator",
@@ -67,34 +87,40 @@ class InstagramService:
                 "profile_picture_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"
             }
         
+        logger.info("Instagram Profile API: Querying user account metadata from graph.instagram.com/me")
         try:
-            # Meta Graph API query
-            url = f"https://graph.facebook.com/v19.0/me?fields=id,name,accounts{{instagram_business_account{{id,username,name,profile_picture_url}}}}&access_token={access_token}"
-            response = requests.get(url, timeout=10)
+            # Query the Instagram Graph User Endpoint directly
+            url = "https://graph.instagram.com/me"
+            params = {
+                "fields": "id,username,name,profile_picture_url,account_type",
+                "access_token": access_token
+            }
+            response = requests.get(url, params=params, timeout=10)
             data = response.json()
-            if "error" in data:
-                raise Exception(data["error"]["message"])
             
-            # Extract Instagram Business Account details
-            pages = data.get("accounts", {}).get("data", [])
-            if not pages:
-                raise Exception("No connected Facebook Pages found.")
+            if "error" in data:
+                error_msg = data["error"].get("message") or "Unknown API error"
+                logger.error(f"Instagram Profile API: Account lookup failed. Detail: {error_msg}")
+                raise Exception(error_msg)
+            
+            account_id = data.get("id")
+            username = data.get("username")
+            if not account_id or not username:
+                logger.error("Instagram Profile API: Account lookup succeeded but required identifier fields are missing.")
+                raise Exception("Profile response is missing user id or username")
                 
-            for page in pages:
-                ig_acct = page.get("instagram_business_account")
-                if ig_acct:
-                    return {
-                        "id": ig_acct["id"],
-                        "username": ig_acct.get("username", "instagram_user"),
-                        "name": ig_acct.get("name", "Creator Account"),
-                        "page_id": page["id"],
-                        "page_access_token": page.get("access_token"),
-                        "profile_picture_url": ig_acct.get("profile_picture_url")
-                    }
-            raise Exception("No Instagram Business Accounts linked to your Facebook Pages.")
+            logger.info(f"Instagram Profile API: Account lookup succeeded for user {username} ({account_id}).")
+            
+            return {
+                "id": account_id,
+                "username": username,
+                "name": data.get("name") or username,
+                "account_type": (data.get("account_type") or "business").lower(),
+                "profile_picture_url": data.get("profile_picture_url")
+            }
         except Exception as e:
-            logger.error(f"Error fetching Instagram account info: {e}")
-            raise Exception(f"Meta Graph API connection failed: {str(e)}")
+            logger.error(f"Instagram Profile API: Critical error fetching Instagram account info: {e}")
+            raise Exception(f"Instagram Graph API connection failed: {str(e)}")
 
     @staticmethod
     def get_posts(access_token: str, instagram_id: str) -> List[Dict[str, Any]]:

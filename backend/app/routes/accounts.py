@@ -1,9 +1,12 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
 from app import models, schemas, auth
 from app.services.instagram import instagram_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/accounts", tags=["Instagram Accounts"])
 
@@ -28,7 +31,9 @@ def connect_account(
     current_user: models.User = Depends(auth.get_current_user), 
     db: Session = Depends(get_db)
 ):
+    logger.info(f"Connect account request received for User ID: {current_user.id}")
     if not payload.access_token and not payload.code:
+        logger.error("Connect account request failed: Neither access_token nor code was provided.")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Either access_token or code is required"
@@ -37,21 +42,26 @@ def connect_account(
     access_token = payload.access_token
     if payload.code:
         if not payload.redirect_uri:
+            logger.error("Connect account request failed: Redirect URI missing for authorization code exchange.")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="redirect_uri is required for authorization code exchange"
             )
         try:
+            logger.info("Exchanging authorization code for access token...")
             access_token = instagram_service.exchange_code_for_token(payload.code, payload.redirect_uri)
+            logger.info("Authorization code exchanged successfully.")
         except Exception as e:
+            logger.error(f"Authorization code exchange failed: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(e)
             )
         
     try:
-        # Fetch account info via Meta Graph API
+        logger.info("Fetching Instagram user profile info...")
         info = instagram_service.get_account_info(access_token)
+        logger.info(f"Instagram profile info fetched successfully: {info.get('username')} ({info.get('id')})")
         
         # Check if already connected by someone else
         existing = db.query(models.InstagramAccount).filter(
@@ -59,7 +69,7 @@ def connect_account(
         ).first()
         
         if existing:
-            # Reconnect or take ownership
+            logger.info(f"Account {info['username']} is already registered. Updating connection and taking ownership.")
             existing.user_id = current_user.id
             existing.username = info["username"]
             existing.access_token = access_token
@@ -68,8 +78,10 @@ def connect_account(
             existing.is_connected = True
             db.commit()
             db.refresh(existing)
+            logger.info("Account connection updated successfully.")
             return existing
             
+        logger.info(f"Registering new Instagram account: {info['username']}")
         new_account = models.InstagramAccount(
             id=info["id"],
             user_id=current_user.id,
@@ -84,8 +96,10 @@ def connect_account(
         db.add(new_account)
         db.commit()
         db.refresh(new_account)
+        logger.info("New account registered successfully.")
         return new_account
     except Exception as e:
+        logger.error(f"Failed to connect Instagram account: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to connect Instagram account: {str(e)}"
