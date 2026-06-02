@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:8000";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 class ApiClient {
   private getHeaders(): HeadersInit {
@@ -121,7 +121,7 @@ class ApiClient {
     if (params.status) query.append("status", params.status);
     if (params.keyword) query.append("keyword", params.keyword);
     if (params.search) query.append("search", params.search);
-    
+
     const queryString = query.toString();
     return this.request<any[]>(`/api/automations${queryString ? `?${queryString}` : ""}`);
   }
@@ -184,7 +184,7 @@ class ApiClient {
     if (params.status) query.append("status", params.status);
     if (params.username) query.append("username", params.username);
     if (params.automationId) query.append("automation_id", params.automationId);
-    
+
     const queryString = query.toString();
     return this.request<any[]>(`/api/logs/activity${queryString ? `?${queryString}` : ""}`);
   }
