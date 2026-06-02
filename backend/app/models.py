@@ -28,7 +28,7 @@ class InstagramAccount(Base):
     __tablename__ = "instagram_accounts"
     
     id = Column(String, primary_key=True, index=True)  # Instagram User ID
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     username = Column(String, nullable=False)
     account_type = Column(String, default="business")  # business / creator
     access_token = Column(String, nullable=False)
@@ -48,8 +48,8 @@ class Automation(Base):
     __tablename__ = "automations"
     
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    instagram_account_id = Column(String, ForeignKey("instagram_accounts.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    instagram_account_id = Column(String, ForeignKey("instagram_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String, nullable=False)
     status = Column(String, default="active")  # active, paused, disabled
     
@@ -77,7 +77,7 @@ class AutomationKeyword(Base):
     __tablename__ = "automation_keywords"
     
     id = Column(Integer, primary_key=True, index=True)
-    automation_id = Column(String, ForeignKey("automations.id", ondelete="CASCADE"), nullable=False)
+    automation_id = Column(String, ForeignKey("automations.id", ondelete="CASCADE"), nullable=False, index=True)
     keyword = Column(String, index=True, nullable=False)
     
     # Relationships
@@ -87,7 +87,7 @@ class AutomationPost(Base):
     __tablename__ = "automation_posts"
     
     id = Column(Integer, primary_key=True, index=True)
-    automation_id = Column(String, ForeignKey("automations.id", ondelete="CASCADE"), nullable=False)
+    automation_id = Column(String, ForeignKey("automations.id", ondelete="CASCADE"), nullable=False, index=True)
     media_id = Column(String, index=True, nullable=False)
     thumbnail_url = Column(Text, nullable=True)
     caption = Column(Text, nullable=True)
@@ -102,12 +102,12 @@ class ActivityLog(Base):
     __tablename__ = "activity_logs"
     
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    instagram_account_id = Column(String, ForeignKey("instagram_accounts.id", ondelete="CASCADE"), nullable=False)
-    automation_id = Column(String, ForeignKey("automations.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    instagram_account_id = Column(String, ForeignKey("instagram_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    automation_id = Column(String, ForeignKey("automations.id", ondelete="SET NULL"), nullable=True, index=True)
     
     username = Column(String, nullable=False)  # Commenter's username
-    comment_id = Column(String, nullable=False)
+    comment_id = Column(String, unique=True, index=True, nullable=False)
     comment_text = Column(Text, nullable=False)
     trigger_matched = Column(String, nullable=True)  # Keyword or trigger type that matched
     dm_sent = Column(Text, nullable=False)  # The generated message that was sent
@@ -132,7 +132,7 @@ class SystemSettings(Base):
     __tablename__ = "system_settings"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     verify_token = Column(String, default="instaflow_verify_token")
     access_token = Column(String, default="")
     app_id = Column(String, default="")

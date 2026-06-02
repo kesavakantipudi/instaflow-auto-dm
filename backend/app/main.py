@@ -37,12 +37,30 @@ app.include_router(logs.router)
 app.include_router(settings_route.router)
 app.include_router(ai.router)
 
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from fastapi import Depends
+from app.database import get_db
+
 @app.get("/api/health")
-def health_check():
+@app.get("/healthz")
+def health_check(db: Session = Depends(get_db)):
+    try:
+        # Run a simple query to verify active database connection
+        db.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"unhealthy: {str(e)}"
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database connection failed: {str(e)}"
+        )
+        
     return {
         "status": "healthy",
         "app": settings.PROJECT_NAME,
-        "database": settings.DATABASE_URL.split("///")[-1]  # Mask connection secrets
+        "database_status": db_status
     }
 
 if __name__ == "__main__":

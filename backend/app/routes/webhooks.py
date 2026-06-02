@@ -36,6 +36,10 @@ def verify_webhook(
         detail="Verification token mismatch"
     )
 
+import hmac
+import hashlib
+import json
+
 @router.post("/instagram")
 async def receive_webhook(
     request: Request,
@@ -44,9 +48,36 @@ async def receive_webhook(
 ):
     """
     Receives incoming comments and events from Meta Instagram Graph Webhook subscription.
+    Verifies authenticity via X-Hub-Signature-256 if META_CLIENT_SECRET is configured.
     """
     try:
-        payload = await request.json()
+        body_bytes = await request.body()
+        
+        # Verify Meta HMAC signature if Client Secret is configured
+        if settings.META_CLIENT_SECRET:
+            signature = request.headers.get("X-Hub-Signature-256")
+            if not signature or not signature.startswith("sha256="):
+                logger.warning("Rejecting incoming Meta webhook: Missing or malformed X-Hub-Signature-256 header")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Signature verification failed: missing header"
+                )
+            
+            sig_val = signature.split("=", 1)[1]
+            expected_sig = hmac.new(
+                settings.META_CLIENT_SECRET.encode("utf-8"),
+                body_bytes,
+                hashlib.sha256
+            ).hexdigest()
+            
+            if not hmac.compare_digest(sig_val, expected_sig):
+                logger.warning("Rejecting incoming Meta webhook: Signature mismatch")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Signature verification failed: mismatch"
+                )
+
+        payload = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
         
         # Log webhook payload in DB
         webhook_log = models.WebhookLog(payload=payload, status="success")
@@ -77,7 +108,8 @@ async def receive_webhook(
                                 comment_text=comment_text,
                                 media_id=media_id,
                                 instagram_account_id=ig_acct_id,
-                                background_tasks=background_tasks
+                                background_tasks=background_tasks,
+                                comment_id=comment_id
                             )
                             
         return {"status": "event_received"}

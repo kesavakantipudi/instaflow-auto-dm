@@ -62,26 +62,83 @@ def login(credentials: schemas.UserLogin, db: Session = Depends(get_db)):
         "username": user.full_name or user.email.split("@")[0]
     }
 
+import requests
+from app.config import settings
+
 @router.post("/google", response_model=schemas.Token)
 def google_login(google_payload: schemas.UserGoogleLogin, db: Session = Depends(get_db)):
     """
-    Mock Google authentication callback. In production, this verifies the Google Client ID token.
-    For local runs, it signs in/registers the user immediately.
+    Real Google authentication callback. Verifies the Google Client ID token.
+    For local sandbox runs, it falls back to mock_google_token only if GOOGLE_CLIENT_ID is not configured.
     """
     token_str = google_payload.token
-    # In production, we'd call google.oauth2.id_token.verify_oauth2_token(token_str, requests.Request(), GOOGLE_CLIENT_ID)
-    # We will simulate Google validation here by extracting the mock email
-    simulated_email = "kesava_google_user@gmail.com" if token_str == "mock_google_token" else token_str
-    if "@" not in simulated_email:
-        simulated_email = f"{simulated_email}@gmail.com"
-        
-    user = db.query(models.User).filter(models.User.email == simulated_email).first()
+    
+    if token_str == "mock_google_token":
+        # Allow mock validation ONLY in local sandbox mode where GOOGLE_CLIENT_ID is not set
+        if settings.GOOGLE_CLIENT_ID:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Mock Google login is disabled in production."
+            )
+        email = "kesava_google_user@gmail.com"
+        google_id = "mock_google_id_12345"
+        name = "Kesava Mock User"
+    else:
+        # Verify the ID token via Google Tokeninfo API
+        try:
+            res = requests.get(
+                f"https://oauth2.googleapis.com/tokeninfo?id_token={token_str}",
+                timeout=5
+            )
+            if res.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or expired Google ID token."
+                )
+            
+            token_info = res.json()
+            
+            # Verify the audience matches our GOOGLE_CLIENT_ID if it is set
+            if settings.GOOGLE_CLIENT_ID:
+                aud = token_info.get("aud")
+                if aud != settings.GOOGLE_CLIENT_ID:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Google token audience mismatch. Unauthorized client application."
+                    )
+            
+            # Ensure the email is verified
+            if token_info.get("email_verified") not in ["true", True]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Google account email is not verified."
+                )
+                
+            email = token_info.get("email")
+            google_id = token_info.get("sub")
+            name = token_info.get("name") or email.split("@")[0].replace("_", " ").title()
+            
+            if not email or not google_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Incomplete Google token information."
+                )
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise e
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Google OAuth verification failed: {str(e)}"
+            )
+
+    # Search for user by email
+    user = db.query(models.User).filter(models.User.email == email).first()
     if not user:
         # Create Google authenticated user
         user = models.User(
-            email=simulated_email,
-            full_name=simulated_email.split("@")[0].replace("_", " ").title(),
-            google_id=f"g_{int(datetime.now().timestamp())}",
+            email=email,
+            full_name=name,
+            google_id=google_id,
             role="creator"
         )
         db.add(user)
@@ -92,6 +149,12 @@ def google_login(google_payload: schemas.UserGoogleLogin, db: Session = Depends(
         default_settings = models.SystemSettings(user_id=user.id)
         db.add(default_settings)
         db.commit()
+    else:
+        # If the user exists but didn't have Google login linked yet, link it
+        if not user.google_id:
+            user.google_id = google_id
+            db.commit()
+            db.refresh(user)
         
     access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(

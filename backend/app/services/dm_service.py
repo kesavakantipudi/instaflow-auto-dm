@@ -50,12 +50,22 @@ class DMService:
         comment_text: str, 
         media_id: str, 
         instagram_account_id: str,
-        background_tasks: Any
+        background_tasks: Any,
+        comment_id: str = None
     ) -> Dict[str, Any]:
         """
         Main entry point for incoming comments (webhooks and simulator).
         Evaluates triggers, builds templates, fires immediate DMs, and schedules follow-ups.
         """
+        # Check for duplicate comment processing (replay protection)
+        if comment_id:
+            existing = db.query(models.ActivityLog).filter(
+                models.ActivityLog.comment_id == comment_id
+            ).first()
+            if existing:
+                logger.info(f"Ignoring duplicate comment webhook event: {comment_id}")
+                return {"status": "ignored", "message": "Duplicate comment_id. Already processed."}
+
         # Fetch connected account
         account = db.query(models.InstagramAccount).filter(
             models.InstagramAccount.id == instagram_account_id
@@ -183,7 +193,7 @@ class DMService:
             instagram_account_id=account.id,
             automation_id=matched_auto.id,
             username=username,
-            comment_id=f"comment_{int(datetime.datetime.utcnow().timestamp())}",
+            comment_id=comment_id or f"comment_{int(datetime.datetime.utcnow().timestamp())}",
             comment_text=comment_text,
             trigger_matched=f"{matched_auto.trigger_type.upper()}: {match_keyword}",
             dm_sent=final_msg,
