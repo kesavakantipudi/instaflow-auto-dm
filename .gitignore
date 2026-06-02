@@ -1,0 +1,56 @@
+# Dependencies & Package Managers
+node_modules/
+/frontend/node_modules/
+/frontend/.next/
+/frontend/out/
+/frontend/build/
+.pnp
+.pnp.*
+.yarn/
+.pnpm-debug.log*
+
+# Python build artifacts & virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+ENV/
+env/
+dist/
+build/
+*.egg-info/
+
+# Databases & local stores
+*.db
+*.sqlite3
+instaflow.db
+
+# Secrets, Environment Variables & Config files
+.env
+.env.*
+*.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Do not ignore .env template examples
+!*.env.example
+!**/.env.example
+
+# Editor & OS files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
