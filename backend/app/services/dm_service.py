@@ -186,6 +186,22 @@ class DMService:
         logger.info("=== AUTOMATION_MATCHED ===")
         logger.info(f"AUTOMATION_MATCHED: id={matched_auto.id}, name={matched_auto.name}, trigger={matched_auto.trigger_type}, keyword={match_keyword}")
             
+        # Fetch post caption for interpolation
+        post_caption = "Instagram Post"
+        if matched_auto:
+            matched_post = db.query(models.AutomationPost).filter(
+                models.AutomationPost.automation_id == matched_auto.id,
+                models.AutomationPost.media_id == media_id
+            ).first()
+            if matched_post and matched_post.caption:
+                post_caption = matched_post.caption
+            else:
+                fallback_post = db.query(models.AutomationPost).filter(
+                    models.AutomationPost.media_id == media_id
+                ).first()
+                if fallback_post and fallback_post.caption:
+                    post_caption = fallback_post.caption
+
         # Compile messages
         # DM message compilation
         raw_dm_msg = matched_auto.dm_template if matched_auto.dm_template else matched_auto.message_template
@@ -300,7 +316,7 @@ class DMService:
             "status": "success",
             "log_id": log.id,
             "matched_automation": matched_auto.name,
-            "message_sent": final_msg,
+            "message_sent": final_dm_msg,
             "error": None
         }
 

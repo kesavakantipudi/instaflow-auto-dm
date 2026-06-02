@@ -84,7 +84,9 @@ class InstagramService:
                 "username": "kesava_ai_creator",
                 "account_type": "business",
                 "name": "Kesava | AI Engineering",
-                "profile_picture_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"
+                "profile_picture_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+                "page_id": "mock_page_id_12345",
+                "page_access_token": "mock_page_access_token_12345"
             }
         
         logger.info("Instagram Profile API: Querying user account metadata from graph.instagram.com/me")
@@ -111,12 +113,43 @@ class InstagramService:
                 
             logger.info(f"Instagram Profile API: Account lookup succeeded for user {username} ({account_id}).")
             
+            # Retrieve linked Facebook Page ID and Page Access Token
+            page_id = None
+            page_access_token = None
+            try:
+                logger.info("Querying user's managed Facebook Pages to find linked Page...")
+                pages_url = "https://graph.facebook.com/v19.0/me/accounts"
+                pages_res = requests.get(pages_url, params={"access_token": access_token}, timeout=10)
+                pages_data = pages_res.json()
+                
+                if "data" in pages_data:
+                    for page in pages_data["data"]:
+                        p_id = page.get("id")
+                        p_token = page.get("access_token")
+                        if p_id and p_token:
+                            # Check if this page is linked to our Instagram Account ID
+                            link_url = f"https://graph.facebook.com/v19.0/{p_id}"
+                            link_res = requests.get(link_url, params={"fields": "instagram_business_account", "access_token": p_token}, timeout=10)
+                            link_data = link_res.json()
+                            ig_biz = link_data.get("instagram_business_account", {})
+                            if ig_biz.get("id") == account_id:
+                                page_id = p_id
+                                page_access_token = p_token
+                                logger.info(f"Successfully matched Facebook Page '{page.get('name')}' ({page_id}) to Instagram Account {account_id}!")
+                                break
+                else:
+                    logger.warning(f"No pages retrieved or error in me/accounts response: {pages_data}")
+            except Exception as page_ex:
+                logger.warning(f"Failed to auto-retrieve linked Facebook Page: {page_ex}")
+            
             return {
                 "id": account_id,
                 "username": username,
                 "name": data.get("name") or username,
                 "account_type": (data.get("account_type") or "business").lower(),
-                "profile_picture_url": data.get("profile_picture_url")
+                "profile_picture_url": data.get("profile_picture_url"),
+                "page_id": page_id,
+                "page_access_token": page_access_token
             }
         except Exception as e:
             logger.error(f"Instagram Profile API: Critical error fetching Instagram account info: {e}")
