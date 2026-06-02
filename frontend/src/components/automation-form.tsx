@@ -2,21 +2,22 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { 
-  Sparkles, 
-  Plus, 
-  Trash2, 
-  MessageSquare, 
-  FileText, 
-  Calendar, 
-  ChevronRight, 
-  ChevronLeft, 
-  Save, 
+import {
+  Sparkles,
+  Plus,
+  Trash2,
+  MessageSquare,
+  FileText,
+  Calendar,
+  ChevronRight,
+  ChevronLeft,
+  Save,
   Sparkle,
   BookOpen,
   Info,
   Clock,
-  Paperclip
+  Paperclip,
+  Loader2
 } from "lucide-react";
 import api from "@/lib/api";
 
@@ -26,7 +27,7 @@ interface AutomationFormProps {
 
 export default function AutomationForm({ automationId }: AutomationFormProps) {
   const router = useRouter();
-  
+
   // State variables
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -36,39 +37,39 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
   const [scopeType, setScopeType] = useState("all_posts");
   const [commentFilterType, setCommentFilterType] = useState("contains");
   const [messageTemplate, setMessageTemplate] = useState("");
-  
+
   // Keywords
   const [keywords, setKeywords] = useState<string[]>([]);
   const [keywordInput, setKeywordInput] = useState("");
-  
+
   // Posts grid fetching
   const [availablePosts, setAvailablePosts] = useState<any[]>([]);
   const [selectedPosts, setSelectedPosts] = useState<any[]>([]); // Items are post payloads
   const [postsLoading, setPostsLoading] = useState(false);
-  
+
   // Attachments
   const [attachments, setAttachments] = useState<any[]>([]);
   const [attachName, setAttachName] = useState("");
   const [attachUrl, setAttachUrl] = useState("");
   const [attachType, setAttachType] = useState("link"); // link, pdf, notion, drive, playlist
-  
+
   // Follow-ups
   const [followUps, setFollowUps] = useState<any[]>([]);
   const [followHours, setFollowHours] = useState("24");
   const [followMsg, setFollowMsg] = useState("");
-  
+
   // UI Tabs / Steps
   const [activeStep, setActiveStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
-  
+
   // AI assist state
   const [aiGeneratingReply, setAiGeneratingReply] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiTone, setAiTone] = useState("friendly");
   const [aiResourceType, setAiResourceType] = useState("playlist");
-  
+
   const [aiSuggestingKeywords, setAiSuggestingKeywords] = useState(false);
   const messageTextareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -81,12 +82,12 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
       setLoading(true);
       const linkedAccts = await api.getAccounts();
       setAccounts(linkedAccts);
-      
+
       if (linkedAccts.length > 0) {
         setSelectedAccountId(linkedAccts[0].id);
         fetchAccountPosts(linkedAccts[0].id);
       }
-      
+
       if (automationId) {
         const auto = await api.getAutomation(automationId);
         setName(auto.name);
@@ -96,16 +97,16 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
         setCommentFilterType(auto.comment_filter_type);
         setMessageTemplate(auto.message_template);
         setSelectedAccountId(auto.instagram_account_id);
-        
+
         // Keywords
         if (auto.keywords) {
           setKeywords(auto.keywords.map((k: any) => k.keyword));
         }
-        
+
         // Attachments & Follow-ups
         setAttachments(auto.attachments || []);
         setFollowUps(auto.follow_ups || []);
-        
+
         // Selected Posts
         if (auto.posts) {
           setSelectedPosts(auto.posts);
@@ -203,14 +204,14 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
   const insertVariable = (tag: string) => {
     const textarea = messageTextareaRef.current;
     if (!textarea) return;
-    
+
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const text = textarea.value;
-    
+
     const nextText = text.substring(0, start) + tag + text.substring(end);
     setMessageTemplate(nextText);
-    
+
     // Focus back and place cursor
     setTimeout(() => {
       textarea.focus();
@@ -270,7 +271,7 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
     preview = preview.replace(/{comment}/g, "python course please!");
     preview = preview.replace(/{post_name}/g, "Python playlist live! 🚀");
     preview = preview.replace(/{date}/g, new Date().toLocaleDateString([], { month: "short", day: "2-digit" }));
-    
+
     if (attachments.length > 0) {
       preview += "\n\nHere are your resources:\n" + attachments.map(a => `🔗 ${a.name}: ${a.url}`).join("\n");
     }
@@ -342,10 +343,10 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
 
       {/* Main Grid: Left Steps form, Right Live Preview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
+
         {/* Left Side: Wizard step cards */}
         <div className="lg:col-span-2 space-y-6">
-          
+
           {/* Step Badges */}
           <div className="glass-panel p-3 rounded-xl border border-slate-900 flex items-center justify-between text-xs font-semibold">
             <button
@@ -378,7 +379,7 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            
+
             {/* STEP 1: Basic setup details */}
             {activeStep === 1 && (
               <div className="glass-panel p-6 rounded-2xl border border-slate-900 space-y-6">
@@ -565,7 +566,7 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
                         <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
                           Select target Media Posts ({selectedPosts.length} selected)
                         </label>
-                        
+
                         {postsLoading ? (
                           <div className="flex justify-center items-center py-10">
                             <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
@@ -580,11 +581,10 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
                                 <div
                                   key={post.media_id}
                                   onClick={() => togglePostSelection(post)}
-                                  className={`relative cursor-pointer rounded-xl overflow-hidden border aspect-square transition-all ${
-                                    isSelected 
-                                      ? "border-cyan-500 glow-teal brightness-110" 
+                                  className={`relative cursor-pointer rounded-xl overflow-hidden border aspect-square transition-all ${isSelected
+                                      ? "border-cyan-500 glow-teal brightness-110"
                                       : "border-slate-800 opacity-60 hover:opacity-100"
-                                  }`}
+                                    }`}
                                 >
                                   <img
                                     src={post.thumbnail_url}
@@ -621,7 +621,7 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  
+
                   {/* Message templates edit */}
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
@@ -677,7 +677,7 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                         <Paperclip className="w-4 h-4 text-cyan-400" /> Attached Resources ({attachments.length})
                       </h4>
-                      
+
                       <div className="grid grid-cols-2 gap-2">
                         <input
                           type="text"
@@ -935,7 +935,7 @@ export default function AutomationForm({ automationId }: AutomationFormProps) {
           <div className="glass-panel p-4 rounded-xl border border-slate-900">
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Visual Mockup Preview</h4>
             <p className="text-[10px] text-slate-500 leading-relaxed mb-4">Instagram smartphone chat UI sandbox.</p>
-            
+
             {/* Instagram Smartphone shell */}
             <div className="border border-slate-800 bg-slate-950 rounded-[30px] p-3 overflow-hidden shadow-2xl relative">
               {/* Phone Speaker & Camera notches */}
