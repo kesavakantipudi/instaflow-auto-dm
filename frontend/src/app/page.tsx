@@ -131,10 +131,15 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-slate-900 py-6 text-center z-10">
+      <footer className="w-full border-t border-slate-900 py-6 text-center z-10 flex flex-col sm:flex-row justify-between items-center max-w-7xl mx-auto px-6 gap-4">
         <p className="text-xs text-slate-500 flex items-center justify-center gap-1">
           Made with <Heart className="w-3.5 h-3.5 text-red-500 fill-red-500" /> for Instagram Creators. © 2026 InstaFlow Auto DM.
         </p>
+        <div className="flex gap-4">
+          <Link href="/privacy" className="text-xs text-slate-500 hover:text-slate-300 transition-colors">
+            Privacy Policy
+          </Link>
+        </div>
       </footer>
     </div>
   );
