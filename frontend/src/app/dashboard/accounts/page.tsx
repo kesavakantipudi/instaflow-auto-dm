@@ -60,12 +60,15 @@ export default function AccountsPage() {
 
     const redirectUri = process.env.NEXT_PUBLIC_META_REDIRECT_URI || `${window.location.origin}/dashboard/accounts`;
     const scopes = [
-      "instagram_business_basic",
-      "instagram_business_manage_messages",
-      "instagram_business_manage_comments"
+      "pages_show_list",
+      "pages_read_engagement",
+      "instagram_basic",
+      "instagram_manage_comments",
+      "instagram_manage_messages",
+      "business_management"
     ].join(",");
 
-    const oauthUrl = `https://api.instagram.com/oauth/authorize?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&response_type=code`;
+    const oauthUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&response_type=code`;
     
     setConnecting(true);
     window.location.href = oauthUrl;

@@ -9,73 +9,72 @@ class InstagramService:
     @staticmethod
     def exchange_code_for_token(code: str, redirect_uri: str) -> str:
         """
-        Exchanges Instagram OAuth authorization code for an access token.
+        Exchanges Facebook OAuth authorization code for a long-lived Facebook User Access Token.
         """
         from app.config import settings
         
         # Sandbox / local simulation support
         if code.startswith("mock_"):
-            logger.info("Instagram OAuth: Using sandbox simulation mode.")
+            logger.info("Facebook OAuth: Using sandbox simulation mode.")
             return "mock_kesava_creator_token"
             
-        logger.info(f"Instagram OAuth: Starting code exchange. Redirect URI: {redirect_uri}")
+        logger.info(f"Facebook OAuth: Starting code exchange. Redirect URI: {redirect_uri}")
         try:
-            # Step 1: Exchange code for short-lived token
-            url = "https://api.instagram.com/oauth/access_token"
-            payload = {
+            # Step 1: Exchange code for short-lived user token
+            url = "https://graph.facebook.com/v19.0/oauth/access_token"
+            params = {
                 "client_id": settings.META_CLIENT_ID,
                 "client_secret": settings.META_CLIENT_SECRET,
-                "grant_type": "authorization_code",
                 "redirect_uri": redirect_uri,
                 "code": code
             }
             
-            response = requests.post(url, data=payload, timeout=10)
+            response = requests.get(url, params=params, timeout=10)
             data = response.json()
             
             if "error" in data:
-                error_msg = data.get("error_message") or (data["error"].get("message") if isinstance(data.get("error"), dict) else "Unknown error")
-                logger.error(f"Instagram OAuth: Code exchange failed. Error: {error_msg}")
+                error_msg = data["error"].get("message") if isinstance(data.get("error"), dict) else "Unknown error"
+                logger.error(f"Facebook OAuth: Code exchange failed. Error: {error_msg}")
                 raise Exception(error_msg)
                 
             short_lived_token = data.get("access_token")
             if not short_lived_token:
-                logger.error("Instagram OAuth: Code exchange succeeded but access_token is missing from response.")
+                logger.error("Facebook OAuth: Code exchange succeeded but access_token is missing from response.")
                 raise Exception("Access token missing in OAuth response")
                 
-            logger.info("Instagram OAuth: Short-lived access token retrieved successfully.")
+            logger.info("Facebook OAuth: Short-lived user access token retrieved successfully.")
             
-            # Step 2: Exchange short-lived token for long-lived (60 days) token
-            logger.info("Instagram OAuth: Requesting long-lived access token.")
-            long_lived_url = "https://graph.instagram.com/access_token"
-            params = {
-                "grant_type": "ig_exchange_token",
+            # Step 2: Exchange short-lived token for long-lived (60 days) Facebook User token
+            logger.info("Facebook OAuth: Requesting long-lived access token.")
+            ll_params = {
+                "grant_type": "fb_exchange_token",
+                "client_id": settings.META_CLIENT_ID,
                 "client_secret": settings.META_CLIENT_SECRET,
-                "access_token": short_lived_token
+                "fb_exchange_token": short_lived_token
             }
-            ll_response = requests.get(long_lived_url, params=params, timeout=10)
+            ll_response = requests.get(url, params=ll_params, timeout=10)
             ll_data = ll_response.json()
             
             if "error" in ll_data:
                 ll_error = ll_data["error"].get("message") if isinstance(ll_data.get("error"), dict) else "Unknown error"
-                logger.warning(f"Instagram OAuth: Long-lived token promotion failed. Falling back to short-lived token. Detail: {ll_error}")
+                logger.warning(f"Facebook OAuth: Long-lived token promotion failed. Falling back to short-lived token. Detail: {ll_error}")
                 return short_lived_token
                 
             long_lived_token = ll_data.get("access_token")
             if long_lived_token:
-                logger.info("Instagram OAuth: Long-lived access token retrieved successfully.")
+                logger.info("Facebook OAuth: Long-lived access token retrieved successfully.")
                 return long_lived_token
                 
-            logger.warning("Instagram OAuth: Long-lived promotion returned empty token. Falling back to short-lived token.")
+            logger.warning("Facebook OAuth: Long-lived promotion returned empty token. Falling back to short-lived token.")
             return short_lived_token
         except Exception as e:
-            logger.error(f"Instagram OAuth: Critical error during code exchange process: {e}")
+            logger.error(f"Facebook OAuth: Critical error during code exchange process: {e}")
             raise Exception(f"OAuth code exchange failed: {str(e)}")
 
     @staticmethod
     def get_account_info(access_token: str) -> Dict[str, Any]:
         """
-        Gets details of connected professional Instagram account. Falls back to mock data for simulated logins.
+        Gets details of connected professional Instagram account and its linked Facebook Page.
         """
         if access_token.startswith("mock_") or not access_token:
             logger.info("Instagram Profile API: Utilizing simulated sandbox account profile.")
@@ -89,71 +88,85 @@ class InstagramService:
                 "page_access_token": "mock_page_access_token_12345"
             }
         
-        logger.info("Instagram Profile API: Querying user account metadata from graph.instagram.com/me")
+        logger.info("Instagram Profile API: Querying user's Facebook Pages to find linked Instagram Account")
         try:
-            # Query the Instagram Graph User Endpoint directly
-            url = "https://graph.instagram.com/me"
-            params = {
-                "fields": "id,username,name,profile_picture_url,account_type",
-                "access_token": access_token
-            }
-            response = requests.get(url, params=params, timeout=10)
-            data = response.json()
+            # 1. Fetch user's managed Facebook Pages and Page Access Tokens
+            pages_url = "https://graph.facebook.com/v19.0/me/accounts"
+            pages_res = requests.get(pages_url, params={"access_token": access_token}, timeout=10)
+            pages_data = pages_res.json()
             
-            if "error" in data:
-                error_msg = data["error"].get("message") or "Unknown API error"
-                logger.error(f"Instagram Profile API: Account lookup failed. Detail: {error_msg}")
+            if "error" in pages_data:
+                error_msg = pages_data["error"].get("message") or "Failed to retrieve managed Pages"
+                logger.error(f"Instagram Profile API: Pages lookup failed: {error_msg}")
                 raise Exception(error_msg)
-            
-            account_id = data.get("id")
-            username = data.get("username")
-            if not account_id or not username:
-                logger.error("Instagram Profile API: Account lookup succeeded but required identifier fields are missing.")
-                raise Exception("Profile response is missing user id or username")
                 
-            logger.info(f"Instagram Profile API: Account lookup succeeded for user {username} ({account_id}).")
-            
-            # Retrieve linked Facebook Page ID and Page Access Token
-            page_id = None
-            page_access_token = None
-            try:
-                logger.info("Querying user's managed Facebook Pages to find linked Page...")
-                pages_url = "https://graph.facebook.com/v19.0/me/accounts"
-                pages_res = requests.get(pages_url, params={"access_token": access_token}, timeout=10)
-                pages_data = pages_res.json()
+            pages = pages_data.get("data", [])
+            if not pages:
+                logger.error("Instagram Profile API: No managed Facebook Pages found for this user.")
+                raise Exception("No managed Facebook Pages found. Make sure your Instagram Business profile is linked to a Facebook Page.")
                 
-                if "data" in pages_data:
-                    for page in pages_data["data"]:
-                        p_id = page.get("id")
-                        p_token = page.get("access_token")
-                        if p_id and p_token:
-                            # Check if this page is linked to our Instagram Account ID
-                            link_url = f"https://graph.facebook.com/v19.0/{p_id}"
-                            link_res = requests.get(link_url, params={"fields": "instagram_business_account", "access_token": p_token}, timeout=10)
-                            link_data = link_res.json()
-                            ig_biz = link_data.get("instagram_business_account", {})
-                            if ig_biz.get("id") == account_id:
-                                page_id = p_id
-                                page_access_token = p_token
-                                logger.info(f"Successfully matched Facebook Page '{page.get('name')}' ({page_id}) to Instagram Account {account_id}!")
-                                break
-                else:
-                    logger.warning(f"No pages retrieved or error in me/accounts response: {pages_data}")
-            except Exception as page_ex:
-                logger.warning(f"Failed to auto-retrieve linked Facebook Page: {page_ex}")
+            # 2. Iterate through Pages to find linked Instagram Business/Creator Account
+            for page in pages:
+                page_id = page.get("id")
+                page_access_token = page.get("access_token")
+                page_name = page.get("name")
+                
+                if not page_id or not page_access_token:
+                    continue
+                    
+                # Query page details to get the instagram_business_account relation
+                page_details_url = f"https://graph.facebook.com/v19.0/{page_id}"
+                params = {
+                    "fields": "instagram_business_account",
+                    "access_token": page_access_token
+                }
+                res = requests.get(page_details_url, params=params, timeout=10)
+                details = res.json()
+                
+                ig_account = details.get("instagram_business_account")
+                if ig_account and "id" in ig_account:
+                    ig_id = ig_account["id"]
+                    logger.info(f"Instagram Profile API: Mapped Facebook Page '{page_name}' ({page_id}) to Instagram Account {ig_id}")
+                    
+                    # 3. Retrieve Instagram Profile details (username, name, profile_picture_url)
+                    ig_profile_url = f"https://graph.facebook.com/v19.0/{ig_id}"
+                    ig_params = {
+                        "fields": "id,username,name,profile_picture_url",
+                        "access_token": page_access_token
+                    }
+                    ig_res = requests.get(ig_profile_url, params=ig_params, timeout=10)
+                    ig_data = ig_res.json()
+                    
+                    if "error" in ig_data:
+                        ig_error = ig_data["error"].get("message") or "Failed to retrieve Instagram profile info"
+                        logger.error(f"Instagram Profile API: Profile lookup failed: {ig_error}")
+                        # Fallback to generic details if profile query fails
+                        return {
+                            "id": ig_id,
+                            "username": f"instagram_user_{ig_id}",
+                            "name": f"Instagram Account ({ig_id})",
+                            "account_type": "business",
+                            "profile_picture_url": None,
+                            "page_id": page_id,
+                            "page_access_token": page_access_token
+                        }
+                        
+                    return {
+                        "id": ig_id,
+                        "username": ig_data.get("username") or f"instagram_user_{ig_id}",
+                        "name": ig_data.get("name") or ig_data.get("username") or f"Instagram Account ({ig_id})",
+                        "account_type": "business",
+                        "profile_picture_url": ig_data.get("profile_picture_url"),
+                        "page_id": page_id,
+                        "page_access_token": page_access_token
+                    }
+                    
+            logger.error("Instagram Profile API: No linked Instagram Business account found among managed Pages.")
+            raise Exception("No linked Instagram Business profile was found. Please ensure your Instagram Account is configured as a Professional Account and linked to your Facebook Page.")
             
-            return {
-                "id": account_id,
-                "username": username,
-                "name": data.get("name") or username,
-                "account_type": (data.get("account_type") or "business").lower(),
-                "profile_picture_url": data.get("profile_picture_url"),
-                "page_id": page_id,
-                "page_access_token": page_access_token
-            }
         except Exception as e:
-            logger.error(f"Instagram Profile API: Critical error fetching Instagram account info: {e}")
-            raise Exception(f"Instagram Graph API connection failed: {str(e)}")
+            logger.error(f"Instagram Profile API: Critical error mapping Instagram account: {e}")
+            raise Exception(f"Failed to resolve Instagram Business Profile: {str(e)}")
 
     @staticmethod
     def get_posts(access_token: str, instagram_id: str) -> List[Dict[str, Any]]:
@@ -197,46 +210,49 @@ class InstagramService:
             ]
             
         try:
-            url = "https://graph.instagram.com/me/media"
+            url = f"https://graph.facebook.com/v19.0/{instagram_id}/media"
             
             logger.info(f"Fetching media for {instagram_id}")
             logger.info(f"Token prefix: {access_token[:15]}...")
             logger.info(f"Using endpoint: {url}")
             
             params = {
-                "fields": "id,media_type,media_url,thumbnail_url,permalink,caption,timestamp",
+                "fields": "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp",
                 "access_token": access_token
             }
             
             response = requests.get(url, params=params, timeout=10)
             data = response.json()
-            logger.info(f"Instagram media response: {data}")
             
             if "error" in data:
+                logger.error(f"Failed to fetch posts: {data['error'].get('message')}")
                 raise Exception(data["error"]["message"])
                 
             posts = []
             for item in data.get("data", []):
-                # Reels/Videos use thumbnail_url, images use media_url
-                thumb = item.get("thumbnail_url") or item.get("media_url")
-                pub_date = datetime.datetime.strptime(item.get("timestamp", ""), "%Y-%m-%dT%H:%M:%S%z") if item.get("timestamp") else datetime.datetime.now()
+                publish_date = None
+                if item.get("timestamp"):
+                    try:
+                        publish_date = datetime.datetime.strptime(item["timestamp"], "%Y-%m-%dT%H:%M:%S%z")
+                    except Exception:
+                        pass
                 
                 posts.append({
-                    "media_id": item["id"],
-                    "thumbnail_url": thumb,
-                    "caption": item.get("caption", ""),
-                    "permalink": item.get("permalink", ""),
-                    "media_type": item.get("media_type", "IMAGE"),
-                    "publish_date": pub_date
+                    "media_id": item.get("id"),
+                    "thumbnail_url": item.get("thumbnail_url") or item.get("media_url"),
+                    "caption": item.get("caption"),
+                    "permalink": item.get("permalink"),
+                    "media_type": item.get("media_type"),
+                    "publish_date": publish_date
                 })
             return posts
         except Exception as e:
-            logger.exception("Media fetch failed")
-            raise
+            logger.exception("Error getting Instagram posts")
+            raise Exception(f"Failed to fetch posts from Instagram: {str(e)}")
 
     @staticmethod
     def send_dm(
-        access_token: str, 
+        access_token: str,
         recipient_id: str, 
         message: str, 
         comment_id: str = None,
@@ -246,7 +262,7 @@ class InstagramService:
     ) -> Dict[str, Any]:
         """
         Sends message to user's Instagram DM inbox via Graph API.
-        Can use recipient_id or comment_id (for private replies to comments).
+        Prioritizes page_access_token for direct message delivery.
         """
         import json
         if access_token.startswith("mock_") or not access_token:
@@ -254,9 +270,7 @@ class InstagramService:
             return {"recipient_id": recipient_id, "message_id": "mid.mock_dm_msg_id_123456789"}
             
         try:
-            # For private replies to comments, Page Access Token is required. 
-            # If page_access_token is provided, use it. Otherwise fall back to access_token.
-            token_to_use = page_access_token if (comment_id and page_access_token) else access_token
+            token_to_use = page_access_token if page_access_token else access_token
             token_type = "Page Access Token" if token_to_use == page_access_token else "User Access Token"
             
             url = f"https://graph.facebook.com/v19.0/me/messages?access_token={token_to_use}"
@@ -305,6 +319,7 @@ class InstagramService:
     ) -> Dict[str, Any]:
         """
         Sends a public reply to a comment using POST /{comment-id}/replies.
+        Prioritizes page_access_token for comment reply delivery.
         """
         import json
         if access_token.startswith("mock_") or not access_token:
@@ -312,18 +327,19 @@ class InstagramService:
             return {"id": f"mock_reply_{comment_id}"}
             
         try:
-            # Comment replies can use User Access Token or Page Access Token.
-            # We default to access_token (User Token) but support fallback.
+            token_to_use = page_access_token if page_access_token else access_token
+            token_type = "Page Access Token" if token_to_use == page_access_token else "User Access Token"
+            
             url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
             params = {
                 "message": message,
-                "access_token": access_token
+                "access_token": token_to_use
             }
             
             logger.info(f"=== SEND_COMMENT_REPLY_CALLED ===")
             logger.info(f"SEND_COMMENT_REPLY_CALLED: comment_id={comment_id}, media_id={media_id}, account_id={account_id}")
             logger.info(f"Endpoint: {url}")
-            logger.info(f"TOKEN_SOURCE: token_type=User Access Token, access_token={access_token[:15]}..., page_access_token={page_access_token[:15] if page_access_token else 'NULL'}...")
+            logger.info(f"TOKEN_SOURCE: token_type={token_type}, access_token={access_token[:15]}..., page_access_token={page_access_token[:15] if page_access_token else 'NULL'}...")
             
             response = requests.post(url, params=params, timeout=10)
             status_code = response.status_code
@@ -331,15 +347,6 @@ class InstagramService:
             
             logger.info(f"META_RESPONSE: method=POST, endpoint={url}, status_code={status_code}, body={json.dumps(data)}")
             
-            if "error" in data and page_access_token:
-                logger.warning("Failed with User Access Token. Trying fallback to Page Access Token...")
-                params["access_token"] = page_access_token
-                logger.info(f"TOKEN_SOURCE: token_type=Page Access Token (Fallback), access_token={access_token[:15]}..., page_access_token={page_access_token[:15]}...")
-                response = requests.post(url, params=params, timeout=10)
-                status_code = response.status_code
-                data = response.json()
-                logger.info(f"META_RESPONSE (Fallback): method=POST, endpoint={url}, status_code={status_code}, body={json.dumps(data)}")
-                
             if "error" in data:
                 logger.error(f"Comment reply status: FAILED. Error: {data['error'].get('message')}")
                 raise Exception(data["error"]["message"])
@@ -350,9 +357,8 @@ class InstagramService:
             logger.exception("Error sending Instagram comment reply")
             raise Exception(f"Failed to deliver comment reply: {str(e)}")
 
-
     @staticmethod
-    def subscribe_account(access_token: str, instagram_id: str) -> Dict[str, Any]:
+    def subscribe_account(access_token: str, instagram_id: str, page_access_token: str = None) -> Dict[str, Any]:
         """
         Subscribes the Instagram account to the webhook changes (comments).
         """
@@ -362,11 +368,11 @@ class InstagramService:
             return {"success": True}
             
         try:
-            # Let's hit the subscribed_apps endpoint on graph.instagram.com first
-            url = f"https://graph.instagram.com/v19.0/{instagram_id}/subscribed_apps"
+            token_to_use = page_access_token if page_access_token else access_token
+            url = f"https://graph.facebook.com/v19.0/{instagram_id}/subscribed_apps"
             params = {
                 "subscribed_fields": "comments,messages",
-                "access_token": access_token
+                "access_token": token_to_use
             }
             logger.info("=== WEBHOOK SUBSCRIPTION ATTEMPT ===")
             logger.info(f"Instagram ID: {instagram_id}")
@@ -379,16 +385,8 @@ class InstagramService:
             logger.info(f"Subscription Response Body: {json.dumps(data)}")
             
             if "error" in data:
-                # If graph.instagram.com fails, try graph.facebook.com as a fallback
-                logger.warning("Failed on graph.instagram.com. Trying fallback to graph.facebook.com...")
-                fb_url = f"https://graph.facebook.com/v19.0/{instagram_id}/subscribed_apps"
-                fb_res = requests.post(fb_url, params=params, timeout=10)
-                logger.info(f"Fallback Subscription Response Code: {fb_res.status_code}")
-                logger.info(f"Fallback Subscription Response Body: {json.dumps(fb_res.json())}")
-                data = fb_res.json()
-                if "error" in data:
-                    logger.error(f"Subscription status: FAILED. Error: {data['error'].get('message')}")
-                    raise Exception(data["error"]["message"])
+                logger.error(f"Subscription status: FAILED. Error: {data['error'].get('message')}")
+                raise Exception(data["error"]["message"])
             
             logger.info("Subscription status: SUCCESS")
             return data
@@ -397,7 +395,7 @@ class InstagramService:
             raise Exception(f"Failed to configure webhook subscription: {str(e)}")
 
     @staticmethod
-    def get_subscription_status(access_token: str, instagram_id: str) -> Dict[str, Any]:
+    def get_subscription_status(access_token: str, instagram_id: str, page_access_token: str = None) -> Dict[str, Any]:
         """
         Retrieves webhook subscription status (subscribed fields) for this Instagram account.
         """
@@ -405,20 +403,16 @@ class InstagramService:
             return {"data": [{"subscribed_fields": ["comments", "messages"]}], "simulated": True}
             
         try:
-            url = f"https://graph.instagram.com/v19.0/{instagram_id}/subscribed_apps"
-            params = {"access_token": access_token}
+            token_to_use = page_access_token if page_access_token else access_token
+            url = f"https://graph.facebook.com/v19.0/{instagram_id}/subscribed_apps"
+            params = {"access_token": token_to_use}
             logger.info(f"Fetching webhook subscription status. URL: {url}")
             response = requests.get(url, params=params, timeout=10)
             data = response.json()
             logger.info(f"Subscription status response: {data}")
             
             if "error" in data:
-                # Fallback to graph.facebook.com
-                fb_url = f"https://graph.facebook.com/v19.0/{instagram_id}/subscribed_apps"
-                fb_res = requests.get(fb_url, params=params, timeout=10)
-                data = fb_res.json()
-                if "error" in data:
-                    raise Exception(data["error"]["message"])
+                raise Exception(data["error"]["message"])
             return data
         except Exception as e:
             logger.warning(f"Could not retrieve webhook subscription status: {e}")

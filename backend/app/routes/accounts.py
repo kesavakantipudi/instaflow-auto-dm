@@ -28,7 +28,11 @@ def _log_connection_diagnostics(access_token: str, info: dict):
     # Run subscription
     sub_res = None
     try:
-        sub_res = instagram_service.subscribe_account(access_token, info["id"])
+        sub_res = instagram_service.subscribe_account(
+            access_token=access_token,
+            instagram_id=info["id"],
+            page_access_token=info.get("page_access_token")
+        )
         logger.info(f"Subscription API Response: {sub_res}")
     except Exception as sub_err:
         logger.error(f"Subscription API Response (Failed): {sub_err}")
@@ -217,8 +221,11 @@ def get_account_diagnostics(
         )
         
     import requests
-    # 1. Fetch subscription status from Meta
-    subscription = instagram_service.get_subscription_status(account.access_token, account.id)
+    subscription = instagram_service.get_subscription_status(
+        access_token=account.access_token,
+        instagram_id=account.id,
+        page_access_token=account.page_access_token
+    )
     
     # 2. Fetch token permissions from Meta using debug_token
     permissions = []
